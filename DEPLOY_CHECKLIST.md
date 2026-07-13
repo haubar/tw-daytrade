@@ -1,0 +1,119 @@
+# 部署檢查清單（DEPLOY_CHECKLIST.md）
+
+跟著這份清單一步一步做，每一步都有「怎麼判斷成功/失敗」跟「失敗了怎麼辦」。照順序做，因為後面的步驟依賴前面的步驟。
+
+---
+
+## 0. 前置需求
+
+- [ ] 有 GitHub 帳號，且這個專案的程式碼已經 push 到一個 repo
+- [ ] 有 Netlify 帳號（免費方案就夠）
+
+如果專案還沒放到 GitHub：
+
+```bash
+cd tw-daytrade-scanner
+git init
+git add .
+git commit -m "Phase 1 + Phase 2 完整後端與前端"
+# 到 GitHub 建一個新 repo，然後：
+git remote add origin <你的 repo URL>
+git branch -M main
+git push -u origin main
+```
+
+---
+
+## 1. 建立 Netlify 站台
+
+1. [ ] 登入 Netlify → **Add new site → Import an existing project**
+2. [ ] 選擇你剛剛 push 的 GitHub repo
+3. [ ] Build 設定應該會自動從 `netlify.toml` 讀到（`npm run build` / `dist` / `netlify/functions`），確認畫面上顯示的設定跟這個一致，不用手動改
+4. [ ] 按下部署，等待建置完成（第一次通常 1-2 分鐘）
+
+**判斷成功**：Netlify 給你一個 `https://隨機字串.netlify.app` 的網址，打開後看得到 Dashboard 畫面（此時應該還是顯示「範例資料」的黃色提示條，因為排程還沒跑過）。
+
+---
+
+## 2. 驗證資料抓取：TWSE
+
+打開瀏覽器到：
+```
+https://你的站台.netlify.app/.netlify/functions/fetch-daily-quotes
+```
+
+- [ ] 確認回應 JSON 裡 `twse.count` 是一個大於 1000 的數字，`twse.errorCount` 是 0 或很小的數字
+- [ ] 確認 `twse.sample` 裡有看到正常的股票資料（代號、開高低收都不是 0）
+
+**如果失敗**：把回應的 JSON 貼給我，我幫你看是端點掛了還是欄位對不上。
+
+---
+
+## 3. 驗證資料抓取：TPEx（**這裡很可能會需要修正**）
+
+同一份回應裡看 `tpex` 那欄：
+
+- [ ] 如果 `tpex.count` 是正常數字（跟上市檔數量級相近），**恭喜，欄位猜對了**，可以跳過這步
+- [ ] 如果 `tpex.error` 或 `tpex.firstError` 出現訊息，把完整錯誤訊息貼給我——錯誤訊息裡會列出「實際欄位為: [...]」，我會依照這個更新 `netlify/functions/lib/normalize.mjs` 裡的 `TPEX_FIELD_CANDIDATES`
+
+這是目前**最可能需要來回修正**的一步，不用意外。
+
+---
+
+## 4. 手動觸發一次完整掃描
+
+打開：
+```
+https://你的站台.netlify.app/.netlify/functions/scan
+```
+
+這一步會比較慢（要抓當日行情 + 5 天歷史資料 + 法人資料），等個 10-30 秒是正常的。
+
+- [ ] 確認回應是完整的 JSON，`longWatchlist`／`shortWatchlist` 都有資料
+- [ ] 檢查 `dataSourceStatus.institutional`：
+  - 如果顯示 `ok (數字 檔)` 沒有警告符號 ⚠，代表法人資料抓取正常、日期也對得上
+  - 如果有 `⚠ 法人買賣超資料日期與預期不符...`，把訊息貼給我，代表 T86 端點的 `date` 參數真的不可靠（跟 `history.mjs` 那邊發現的問題一樣），需要我補強成跟 `history.mjs` 一樣「往前多試幾天」的邏輯
+  - 如果顯示 `失敗: ...`，把錯誤訊息貼給我
+- [ ] 檢查 `historicalDatesUsed` 是不是 5 個不重複的日期，且都是合理的最近交易日
+- [ ] 檢查有沒有 `storageWarning` 欄位出現在回應裡——如果有，代表 Netlify Blobs 寫入失敗，把訊息貼給我（可能是 Blobs 需要額外設定，或方案限制）
+
+---
+
+## 5. 驗證 Netlify Blobs 真的存到資料
+
+打開：
+```
+https://你的站台.netlify.app/.netlify/functions/latest
+```
+
+- [ ] 確認回應的 `generatedAt` 時間跟你剛剛第 4 步觸發 `scan` 的時間差不多（代表真的讀到剛剛存的那筆，不是舊資料或空的）
+- [ ] 如果回應是 404「目前還沒有任何掃描結果」，代表第 4 步的 `scan` 存檔失敗了，回頭看第 4 步的 `storageWarning`
+
+---
+
+## 6. 檢查排程有沒有正確註冊
+
+Netlify 後台 → 你的站台 → **Functions** 分頁：
+
+- [ ] 應該要看到 `scan` 這個 function，旁邊有排程（cron）的標示
+- [ ] 如果沒有排程標示，代表 `scan.mjs` 裡的 `export const config = { schedule: ... }` 沒有被 Netlify 正確辨識，把 Functions 分頁的截圖或畫面描述給我
+
+不用在這裡等到排程真的自動觸發（下一個交易日收盤後才會跑），能看到排程標示存在就算這步驟過了。
+
+---
+
+## 7. 親自檢查前端畫面（我這邊做不到的部分）
+
+打開你的站台首頁 `https://你的站台.netlify.app`：
+
+- [ ] 資料時間、大盤漲跌幅、候選檔數這些數字看起來合理嗎？
+- [ ] 多方觀察榜是不是紅色（漲）、空方觀察榜是不是綠色（跌）？—— **這點特別重要，因為台股紅漲綠跌跟美股相反，如果你覺得顏色「怪怪的」，很可能是我哪裡弄反了，要馬上跟我說**
+- [ ] 每一列右邊的「因子解剖條」，四個顏色的分段看得清楚嗎？
+- [ ] 手機瀏覽器打開，兩欄有沒有變成單欄堆疊？
+- [ ] 整體排版、字體、間距，有沒有哪裡看起來明顯不對勁（跑版、重疊、超出畫面）？
+
+---
+
+## 回報格式建議
+
+不用整份清單都做完才回報，卡在哪一步就把那一步的截圖或錯誤訊息貼給我，我可以針對那個問題直接修，不用等全部做完。

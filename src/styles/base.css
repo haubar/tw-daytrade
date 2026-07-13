@@ -1,0 +1,25 @@
+/* src/styles/base.css
+ *
+ * Base 層：引入 token 層，並放「整個網站共用、跟哪個元件無關」的基礎規則
+ * （body 預設樣式、focus 樣式）。
+ * 元件本身的樣式（版面、間距）交給 Tailwind 工具類別在 template 裡直接寫，
+ * 或是真的無法用工具類別表達的視覺細節，才放在該元件自己的 scoped <style> 裡。
+ */
+
+@import './theme.css';
+
+@layer base {
+  body {
+    margin: 0;
+    background-color: var(--color-ink);
+    color: var(--color-paper);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 可見的鍵盤 focus 樣式，不能只靠滑鼠 hover 才看得到互動狀態 */
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+  }
+}

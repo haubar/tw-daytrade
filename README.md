@@ -1,0 +1,134 @@
+# 台股當沖判斷器（TW Day-Trade Scanner）
+
+台股全市場盤後篩選工具，用免費公開資料計算「量能異常／跳空幅度／相對大盤強弱勢／隔日沖分點介入」四大因子，產生隔日觀察名單。**僅供參考，不構成投資建議，當沖有資格與風險限制，請自行評估。**
+
+## 技術棧
+
+| 層 | 技術 |
+|---|---|
+| 前端 Dashboard | Vue 3 + Vite（靜態部署於 Netlify） |
+| 資料抓取／運算 | Netlify Functions（Node.js） |
+| 自動排程 | Netlify Scheduled Functions（收盤後自動觸發） |
+| 資料儲存 | Netlify Blobs |
+
+## 資料來源
+
+- **上市**：TWSE OpenAPI `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`（已用即時資料驗證欄位）
+- **上櫃**：TPEx OpenAPI（欄位待部署後驗證，見下方「已知限制」）
+- **券商分點**：TWSE 分點查詢系統 `bsr.twse.com.tw`（尚未實作，規劃於後續階段）
+
+## 專案結構
+
+```
+tw-daytrade-scanner/
+├── netlify.toml                          # Netlify 設定（含排程 cron）
+├── package.json
+├── README.md
+├── PROGRESS.md                            # 開發階段紀錄（每階段目標／完成事項）
+├── src/
+│   ├── main.js
+│   ├── App.vue
+│   ├── sampleData.js
+│   ├── styles/
+│   │   ├── theme.css                   # Token 層：Tailwind @theme 設計 token（色彩/字體/圓角）
+│   │   └── base.css                    # Base 層：引入 theme.css + 全域基礎規則
+│   ├── utils/
+│   │   └── format.js                    # 共用格式化函式（原本各元件重複寫的邏輯抽出來）
+│   └── components/
+│       ├── ScoreBar.vue                 # 因子解剖條（簽名元素）
+│       ├── WatchlistPanel.vue           # 多方/空方觀察榜面板
+│       ├── StatusBar.vue                # 頂部狀態列
+│       └── base/
+│           ├── Badge.vue                 # 通用徽章（市場標籤等）
+│           └── StatItem.vue              # 通用「標籤+數值」統計項目
+└── netlify/functions/
+    ├── scan.mjs                            # 【主要進入點】完整流程：抓取→歷史→篩選→存入 Blobs
+    ├── latest.mjs                           # 給前端呼叫：讀取 Blobs 裡最新一筆結果
+    ├── fetch-daily-quotes.mjs             # 輔助 function：只抓今日行情（除錯用）
+    ├── _test-*.mjs                         # 本地測試腳本（不連網路，用樣本/假資料驗證邏輯）
+    └── lib/
+        ├── normalize.mjs                   # 資料正規化：把不同來源／格式轉成統一格式
+        ├── csv.mjs                         # 輕量 CSV 解析器（歷史資料端點用）
+        ├── history.mjs                     # 抓取過去 N 個交易日的成交量歷史
+        ├── factors.mjs                     # 因子計算：量能異常／跳空／相對強弱／法人買賣超／綜合評分／因子貢獻度
+        ├── institutional.mjs                # 抓取三大法人買賣超日報（取代原本規劃的隔日沖分點因子，見下方說明）
+        ├── screen.mjs                      # 整合流程：串接以上模組，產生多方/空方觀察榜
+        └── storage.mjs                      # Netlify Blobs 儲存層：存/讀最新結果與歷史備份
+```
+
+## 關於「隔日沖分點因子」的重要說明
+
+原本規劃第四個因子是「隔日沖券商分點買賣超」，但實測發現 TWSE 的分點查詢系統（`bsr.twse.com.tw`）**有圖形驗證碼保護**，無法在 Netlify Function 裡自動化查詢（自動繞過驗證碼本身也不是應該做的事）。
+
+因此改用**三大法人買賣超日報**（外資＋投信＋自營商）取代：免費、有官方端點、可完全自動化、而且是全市場一次撈取（不需要「先篩選再逐檔查詢」的兩階段設計）。這不是真正的分點級資料，但是同樣屬於「有大額資金介入訊號」的免費籌碼面資料。目前只涵蓋**上市（TWSE）**股票，上櫃（TPEx）的法人買賣超是不同資料源，尚未串接——上櫃股票的這個因子會預設為中性（0）。
+
+## 前端 Dashboard
+
+深色看盤終端機風格，貼近台灣交易者熟悉的看盤軟體語彙：密集資訊、等寬數字對齊、**紅漲綠跌**（符合台股慣例，跟美股相反，務必留意）。
+
+簽名視覺元素是「因子解剖條」：每檔股票旁邊一條分段長條，用金／紅或綠／靛三色分別代表量能異常、跳空幅度、相對大盤強弱勢對總分的貢獻比例，讓「這檔股票為什麼上榜」一眼可見，而不是只丟一個總分數字。
+
+字體：`Noto Serif TC`（標題，襯線中文，帶莊重感）+ `Noto Sans TC`（內文）+ `IBM Plex Mono`（所有數字，確保欄位對齊）。
+
+**架構分層**：
+- **CSS**：用 [Tailwind CSS v4](https://tailwindcss.com)（`@tailwindcss/vite` plugin，CSS-first 設定，不需要 `tailwind.config.js`）。分兩層：
+  - `src/styles/theme.css`：只放設計 token，用 Tailwind 的 `@theme` 語法定義，這樣色彩／字體 token 會自動產生對應的工具類別（例如 `--color-surge` 自動可以用 `text-surge`／`bg-surge`），元件不用各自重寫顏色/字體的 CSS
+  - `src/styles/base.css`：引入 `theme.css`，放全域基礎規則（body 預設樣式、focus 樣式）
+  - 元件版面用 Tailwind 工具類別直接寫在 template 裡，真的沒有對應工具類別可以表達的（例如因子解剖條的動態寬度）才用 `:style` 或極少量 scoped CSS
+- **元件複用**：`src/components/base/` 放會被多處引用的通用元件（`Badge.vue` 徽章、`StatItem.vue` 標籤+數值），`src/utils/format.js` 放共用的格式化函式（原本 `formatPercent`／`formatPrice`／`formatDateTime` 在兩個元件裡各寫一份，抽出來共用一份）
+
+**如何在本機看畫面：**
+```bash
+npm install
+npm run dev
+```
+打開瀏覽器到 `http://localhost:5173`。因為還沒接上真實的 Netlify Functions（除非你另外開一個視窗跑 `netlify dev`），畫面會自動改用 `src/sampleData.js` 的範例資料，並在頂部顯示「範例資料」的提示條，不會誤導你以為是真實行情。
+
+**驗證方式**：前端這層沒辦法像後端邏輯一樣寫單元測試（是視覺呈現，不是計算邏輯），改用 `npm run build` 確認整個 Vue + Tailwind 專案能正確編譯，並檢查編譯後的 CSS 確實包含 `@theme` 產生的工具類別（例如 `.text-surge`），確認 token 系統真的有生效，以及本機啟動 dev server 確認每個元件模組都能被正確載入，不會有匯入錯誤或編譯期錯誤。實際畫面好不好看，還是需要你自己打開瀏覽器看一眼——我這邊的環境沒有瀏覽器可以截圖給你確認。
+
+## 如何在本機測試邏輯
+
+```bash
+npm install
+npm run test                # 跑全部測試（87 個案例，見 TEST_REPORT.md）
+npm run test:fetch          # 資料正規化（JSON 格式）
+npm run test:csv            # CSV 解析器
+npm run test:normalize-csv  # 資料正規化（CSV 格式）
+npm run test:history        # 歷史資料抓取邏輯（含日期去重）
+npm run test:factors        # 因子計算公式
+npm run test:screen         # 完整篩選流程整合測試
+npm run test:institutional  # 三大法人買賣超資料解析
+npm run test:storage        # Netlify Blobs 儲存層（用假的 store 物件測試）
+npm run test:integration    # 端對端整合測試（完整模擬 scan.mjs 真實執行流程）
+npm run test:schema         # 前後端資料結構一致性檢查
+npm run test:edge-cases     # 邊界案例（全部資料源失敗、TPEx 欄位對不上等）
+```
+
+這些測試都只用寫死的樣本／假資料驗證邏輯對不對，不會真的連線抓資料，所以可以放心常常跑。
+
+## 如何部署到 Netlify
+
+1. 把整個資料夾 push 到你的 GitHub repo
+2. Netlify 新建站台，連接該 repo，Build command / Publish directory 會自動讀 `netlify.toml`
+3. 部署完成後：
+   - 瀏覽器打開 `https://你的站台.netlify.app/.netlify/functions/scan` 手動觸發一次完整流程（抓取→計算→存入 Blobs），會看到當次算出來的候選名單 JSON
+   - 之後打開 `https://你的站台.netlify.app/.netlify/functions/latest` 可以快速讀到「最新一次」存起來的結果，不會重新抓資料，回應更快，前端 Dashboard 會呼叫這支
+   - 也可以打開 `/.netlify/functions/fetch-daily-quotes` 只看今日行情抓取結果，方便除錯
+
+## 已知限制
+
+- **TPEx（上櫃）欄位尚未實際驗證**：因為開發環境的網路白名單擋掉了 TPEx 網域，`normalize.mjs` 裡的 `TPEX_FIELD_CANDIDATES` 是根據常見命名猜測的候選欄位。部署到 Netlify 第一次執行若欄位對不上，錯誤訊息會清楚列出實際欄位名稱，屆時依照錯誤訊息更新候選欄位即可。
+- **隔日沖分點名單會過時**：目前規劃中的分點清單來自市場公開討論整理，並非官方分類，且每年會變動，正式導入時會做成可調整的設定檔（尚未實作）。
+- **免費 API 無官方使用授權**：抓取頻率過高可能被限流，設計上以「盤後跑一次」為主，避免高頻呼叫。
+
+## 開發進度
+
+詳細的分階段開發紀錄見 [PROGRESS.md](./PROGRESS.md)。
+
+## QA 測試報告
+
+以測試工程師角度做的完整功能與流程驗證，見 [TEST_REPORT.md](./TEST_REPORT.md)。
+
+## 部署檢查清單
+
+準備部署到 Netlify 時，照 [DEPLOY_CHECKLIST.md](./DEPLOY_CHECKLIST.md) 一步一步驗證，每一步都有「怎麼判斷成功/失敗」跟卡住了要回報什麼資訊。

@@ -1,0 +1,40 @@
+/* src/styles/theme.css
+ *
+ * Token 層：只放設計 token，不放任何具體樣式規則。
+ *
+ * 用 Tailwind v4 的 @theme 語法定義，而不是普通的 :root 變數——
+ * 差別在於 @theme 裡的變數會「自動產生對應的工具類別」，例如：
+ *   --color-surge  →  自動可以用 text-surge / bg-surge / border-surge
+ *   --font-display →  自動可以用 font-display
+ * 這樣元件裡就能直接用 Tailwind 的工具類別組版面，不用每個元件各自寫一份重複的 CSS
+ * （這是這次重構的重點：能交給框架做的，就不要自己重寫）。
+ *
+ * 這些變數同時也會以一般 CSS 自訂屬性的形式存在（var(--color-surge) 這樣用也可以），
+ * 所以真的需要客製化樣式時（例如 ScoreBar 的漸層動畫），還是可以在 scoped <style> 裡用 var() 取值。
+ */
+
+@import 'tailwindcss';
+
+@theme {
+  /* 色彩：暖墨黑底 + 語意化的紅（漲/多方）與綠（跌/空方，符合台股慣例，跟美股相反）+ 金色點綴 */
+  --color-ink: #12131a;
+  --color-panel: #1b1d27;
+  --color-panel-raised: #23262f;
+  --color-hairline: #2e3140;
+  --color-paper: #edebe4;
+  --color-mute: #8a8fa3;
+  --color-surge: #e14848;
+  --color-ebb: #1fa37a;
+  --color-gold: #d7a233;
+  --color-signal: #6c7bd9;
+  --color-crest: #2fb6c9;
+
+  /* 字體：襯線中文（標題）+ 黑體中文（內文）+ 等寬字（所有數字，確保欄位對齊） */
+  --font-display: 'Noto Serif TC', serif;
+  --font-body: 'Noto Sans TC', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  /* 圓角：覆蓋 Tailwind 預設值，統一整個介面的圓角手感 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+}

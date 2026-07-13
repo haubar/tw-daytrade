@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# 排程設定實際寫在 netlify/functions/scan.mjs 裡的 `export const config = { schedule: ... }`
+# （Netlify Functions v2 語法，直接寫在 function 檔案裡，而不是這裡用 [functions."名稱"] 區塊）

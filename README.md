@@ -1,4 +1,4 @@
-# 台股當沖判斷器（TW Day-Trade Scanner）
+# 阿韭衝衝衝判斷器（TW Day-Trade Scanner）
 
 台股全市場盤後篩選工具，用免費公開資料計算「量能異常／跳空幅度／相對大盤強弱勢／隔日沖分點介入」四大因子，產生隔日觀察名單。**僅供參考，不構成投資建議，當沖有資格與風險限制，請自行評估。**
 
@@ -42,19 +42,35 @@ tw-daytrade-scanner/
 │           ├── Badge.vue                 # 通用徽章（市場標籤等）
 │           └── StatItem.vue              # 通用「標籤+數值」統計項目
 └── netlify/functions/
-    ├── scan.mjs                            # 【主要進入點】完整流程：抓取→歷史→篩選→存入 Blobs
+    ├── scan.mjs                            # 【主要進入點】完整流程：抓取→讀取歷史累積庫→篩選→存入 Blobs
+    ├── backfill-history.mjs               # 一次性手動補歷史資料工具（加速暖機，見下方說明）
     ├── latest.mjs                           # 給前端呼叫：讀取 Blobs 裡最新一筆結果
     ├── fetch-daily-quotes.mjs             # 輔助 function：只抓今日行情（除錯用）
     ├── _test-*.mjs                         # 本地測試腳本（不連網路，用樣本/假資料驗證邏輯）
     └── lib/
         ├── normalize.mjs                   # 資料正規化：把不同來源／格式轉成統一格式
-        ├── csv.mjs                         # 輕量 CSV 解析器（歷史資料端點用）
-        ├── history.mjs                     # 抓取過去 N 個交易日的成交量歷史
+        ├── csv.mjs                         # 輕量 CSV 解析器（history.mjs 用）
+        ├── history.mjs                     # 現場抓取多天歷史資料（僅 backfill-history.mjs 使用，見下方說明）
+        ├── volume-archive.mjs               # 歷史成交量的 Blobs 累積儲存層（scan.mjs 實際使用的歷史資料來源）
         ├── factors.mjs                     # 因子計算：量能異常／跳空／相對強弱／法人買賣超／綜合評分／因子貢獻度
-        ├── institutional.mjs                # 抓取三大法人買賣超日報（取代原本規劃的隔日沖分點因子，見下方說明）
+        ├── institutional.mjs                # 抓取三大法人買賣超日報
         ├── screen.mjs                      # 整合流程：串接以上模組，產生多方/空方觀察榜
         └── storage.mjs                      # Netlify Blobs 儲存層：存/讀最新結果與歷史備份
 ```
+
+## 關於歷史資料：為什麼改成「每天累積」而不是「現場抓好幾天」
+
+部署到 Netlify 後實測發現，`scan.mjs` 因為有排程設定，屬於 Netlify 的 **Scheduled Function**，這類 function **不管用什麼方式呼叫，執行時間上限固定 30 秒，跟付費方案無關**。現場抓多天歷史資料（要對 TWSE 同一個端點發出好幾筆全市場資料的請求）是整個流程裡最花時間的部分，很容易撞到這個上限。
+
+現在改成：`scan.mjs` 每次執行時，把「今天」的資料存進 Netlify Blobs 累積庫（`volume-archive.mjs`），下次執行時直接讀 Blobs 裡累積的紀錄當歷史資料，不用再現場跟 TWSE 要好幾天份資料。
+
+**代價**：剛部署（或 Blobs 累積庫是空的）的前幾天，累積天數不夠 3 天，量能異常因子會先是中性值，其他三個因子仍正常運作。可以執行以下步驟加速暖機：
+
+1. 部署完成後，打開一次 `https://你的站台.netlify.app/.netlify/functions/backfill-history`
+2. 這支 function 會現場抓 3 天的真實歷史資料，直接灌進 Blobs 累積庫
+3. 因為它一樣要現場抓多天資料，一樣有機會逼近執行時間上限——如果逾時了不用緊張，讓 `scan.mjs` 每天自然執行個 2-3 次就會自己累積齊全，這支只是「加速」用，不是必需品
+
+`history.mjs`（現場抓多天資料的舊邏輯）保留下來只給 `backfill-history.mjs` 使用，`scan.mjs` 本身已經不會呼叫它。
 
 ## 關於「隔日沖分點因子」的重要說明
 
@@ -90,7 +106,7 @@ npm run dev
 
 ```bash
 npm install
-npm run test                # 跑全部測試（87 個案例，見 TEST_REPORT.md）
+npm run test                # 跑全部測試（98 個案例，見 TEST_REPORT.md）
 npm run test:fetch          # 資料正規化（JSON 格式）
 npm run test:csv            # CSV 解析器
 npm run test:normalize-csv  # 資料正規化（CSV 格式）
@@ -99,7 +115,9 @@ npm run test:factors        # 因子計算公式
 npm run test:screen         # 完整篩選流程整合測試
 npm run test:institutional  # 三大法人買賣超資料解析
 npm run test:storage        # Netlify Blobs 儲存層（用假的 store 物件測試）
+npm run test:volume-archive # 歷史成交量的 Blobs 累積儲存層
 npm run test:integration    # 端對端整合測試（完整模擬 scan.mjs 真實執行流程）
+npm run test:integration-backfill # backfill-history.mjs 的整合測試
 npm run test:schema         # 前後端資料結構一致性檢查
 npm run test:edge-cases     # 邊界案例（全部資料源失敗、TPEx 欄位對不上等）
 ```

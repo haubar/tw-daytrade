@@ -1,12 +1,16 @@
 // netlify/functions/scan.mjs
 //
-// 完整流程的入口 function：抓今日行情 → 抓歷史成交量 → 跑因子篩選 → 回傳多方/空方觀察榜。
+// 完整流程的入口 function：抓今日行情 → 讀 Blobs 累積的歷史成交量 → 跑因子篩選 →
+// 把今日資料存進歷史累積庫（給明天用）→ 回傳多方/空方觀察榜。
 // 這是實際會被 Scheduled Function 呼叫、或使用者手動觸發測試的進入點。
 //
-// 部署到 Netlify 後可直接瀏覽器打開 /.netlify/functions/scan 測試（會需要幾秒鐘，因為要抓多天資料）。
+// 部署到 Netlify 後可直接瀏覽器打開 /.netlify/functions/scan 測試。
+// 歷史資料改成從 Blobs 讀（不再現場跟 TWSE 要好幾天份資料），速度應該比舊版快很多，
+// 但剛開始使用的前幾天，累積天數不夠，量能異常因子會先是中性值，可以用
+// backfill-history.mjs 手動補資料加速暖機（見 README）。
 
 import { normalizeTwseRow, normalizeTpexRow, isTradableRow } from './lib/normalize.mjs';
-import { fetchVolumeHistory } from './lib/history.mjs';
+import { getRecentVolumeHistory, appendDailySnapshot } from './lib/volume-archive.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
 import { screenWatchlists } from './lib/screen.mjs';
 import { saveLatestScan } from './lib/storage.mjs';
@@ -20,7 +24,7 @@ const TPEX_URL = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_
 export const config = { schedule: '10 6 * * 1-5' };
 
 async function fetchTodayTwseQuotes() {
-  const res = await fetch(TWSE_URL);
+  const res = await fetch(TWSE_URL, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`TWSE API 回應錯誤: HTTP ${res.status}`);
   const rows = await res.json();
   return rows.map(normalizeTwseRow).filter(isTradableRow);
@@ -30,7 +34,7 @@ async function fetchTodayTpexQuotes() {
   // 見 README「已知限制」：TPEx 欄位尚未實際驗證，欄位對不上時會拋出錯誤，
   // 這裡選擇讓錯誤往上傳遞（而不是吞掉），因為上櫃資料如果抓錯，整份候選名單的
   // 「全市場」前提就不成立了，寧可讓使用者知道，也不要默默只用上市資料出結果。
-  const res = await fetch(TPEX_URL);
+  const res = await fetch(TPEX_URL, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`TPEx API 回應錯誤: HTTP ${res.status}`);
   const rows = await res.json();
   return rows.map(normalizeTpexRow).filter(isTradableRow);
@@ -38,15 +42,15 @@ async function fetchTodayTpexQuotes() {
 
 export default async (req) => {
   const startedAt = Date.now();
+  const todayDateStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
   try {
-    // 四個資料來源彼此獨立（歷史資料、法人資料都不需要等 TWSE/TPEx 的結果才能開始抓），
-    // 全部平行發出，不要排隊序列等待。實測發現序列版本很容易讓整個 function 超過
-    // Netlify 的執行時間上限而逾時（逾時時瀏覽器只會看到籠統的「unknown error」，
-    // 不會直接告訴你是逾時，所以這個坑不容易一眼看出來）。
+    // 三個資料來源彼此獨立，全部平行發出。歷史資料現在是讀 Netlify Blobs 裡累積的紀錄
+    // （見 volume-archive.mjs），不再現場跟 TWSE 要好幾天份資料——這是部署後實測發現的
+    // 效能瓶頸，改成這樣之後，理論上每次執行只需要各資料來源各一次請求，速度快很多。
     const [twseResult, tpexResult, historyResult, institutionalResult] = await Promise.allSettled([
       fetchTodayTwseQuotes(),
       fetchTodayTpexQuotes(),
-      fetchVolumeHistory(5),
+      getRecentVolumeHistory(3, todayDateStr),
       fetchInstitutionalNetBuy(),
     ]);
 
@@ -59,8 +63,20 @@ export default async (req) => {
       throw new Error('今日行情抓取失敗，TWSE 與 TPEx 皆無資料可用');
     }
 
-    // fetchVolumeHistory 內部已經把「單一天請求失敗」的情況處理掉了，理論上不會整個 reject，
-    // 但還是用 allSettled 保守處理，避免它萬一真的 reject 就讓整個 scan 跟著死掉
+    // 把今天的資料存進 Blobs 累積庫，讓「明天」執行時可以讀到今天的資料當作歷史的一部分。
+    // 這一步失敗不應該讓整個掃描失敗——頂多是「這一天沒被存進歷史」，累積速度變慢一點，
+    // 不影響這次掃描本身的結果，所以獨立包 try/catch。
+    let archiveWarning = null;
+    try {
+      await appendDailySnapshot(todayDateStr, todayQuotes);
+    } catch (e) {
+      archiveWarning = `今日資料寫入歷史累積庫失敗（不影響本次結果，但明天的歷史資料會少這一天）: ${e.message}`;
+    }
+
+    // getRecentVolumeHistory 內部如果連不到 Blobs 會整個 reject，這裡保守處理成「視為沒有歷史資料」，
+    // 而不是讓整個 scan 跟著死掉——量能異常因子會全部是中性值，但其他三個因子還是能正常運作。
+    // 天數設定為 3 天：剛開始使用（或剛清空 Blobs 累積庫）的前幾天，累積天數不夠 3 天，
+    // 可以先用 backfill-history.mjs 手動補資料加速暖機。
     const { volumeHistory, datesUsed } =
       historyResult.status === 'fulfilled' ? historyResult.value : { volumeHistory: new Map(), datesUsed: [] };
 
@@ -91,6 +107,9 @@ export default async (req) => {
         institutional: institutionalNetBuy.size > 0
           ? `ok (${institutionalNetBuy.size} 檔)${institutionalWarning ? ` ⚠ ${institutionalWarning}` : ''}`
           : `失敗: ${institutionalWarning}`,
+        historyArchive: historyResult.status === 'fulfilled'
+          ? `ok（累積 ${datesUsed.length}/3 天，${datesUsed.length < 3 ? '尚未暖機完成，量能異常因子會偏向中性' : '天數足夠'}）${archiveWarning ? ` ⚠ ${archiveWarning}` : ''}`
+          : `失敗（本次量能異常因子將全部視為中性）: ${historyResult.reason?.message ?? '未知錯誤'}`,
       },
       historicalDatesUsed: datesUsed,
       marketChangePercent: result.marketChangePercent,

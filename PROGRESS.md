@@ -412,4 +412,121 @@ netlify/functions/_test-integration-scan.mjs
 - 若仍逾時，考慮拆成排程背景執行 + 手動查詢兩支 function 的架構
 - TPEx 欄位對應、T86 date 參數可靠性、Blobs 讀寫、排程註冊、前端視覺呈現
 
+---
+
+## 階段 14：部署後 debug（二）——平行化不夠，找出真正的 30 秒硬上限（本階段）
+
+**目標**：階段 13 把序列請求改成平行後，使用者重新測試仍然 crash。需要更根本的修正。
+
+**根因排查**：查證 Netlify 官方文件（2026 現況）確認：
+- `scan.mjs` 因為有 `export const config = { schedule: ... }`，屬於 **Scheduled Function**，這類 function **不管用什麼方式呼叫（含手動打開網址），執行時間上限固定是 30 秒，跟付費方案無關**——這正好解釋了兩次 log 都精準卡在 `30000 ms`
+- 免費方案的一般同步 function 更嚴格，只有 10 秒
+- Background Functions（15 分鐘上限）**只有付費方案（Pro，$20/月起）才能用**，免費方案完全用不到，不能當作免費方案下的解法
+
+結論：光靠平行化不夠，因為總工作量（多天全市場歷史資料 + 今日行情 + 法人資料）本身就太大，塞不進 30 秒的硬上限，必須真正減少工作量。
+
+**完成事項**：
+1. `history.mjs`：
+   - 預設抓取天數從 5 天降到 3 天、候選嘗試次數從 12 降到 6，用「均量統計基礎稍微變小」換取「大幅降低逾時風險」
+   - 單一天的請求加上 8 秒逾時保護（`AbortSignal.timeout(8000)`），避免單一慢請求拖垮整個預算
+2. `scan.mjs`：TWSE／TPEx 主要行情請求也加上 10 秒逾時保護
+3. `institutional.mjs`：法人資料端點加上 8 秒逾時保護
+4. 更新相關測試的期望值（天數從 5 改成 3）
+
+**驗證方式**：`npm run test`，87 個測試案例，全數通過
+
+**這次沒辦法在這裡驗證的事**：這個環境沒辦法量測「改完之後在 Netlify 真實環境下的實際執行時間」，縮減天數跟加上逾時保護能不能真的塞進 30 秒，還是要使用者重新部署後實測才知道。
+
+**如果這次還是不夠，下一步的備案**（已經比較確定要往這個方向走）：
+把「抓資料」跟「算因子」拆開——寫一支獨立的排程 function，每天只抓「今天」的市場快照（一次性、快），累積存進 Netlify Blobs，滾動保留最近幾天。`scan.mjs` 改成從 Blobs 讀取已經存好的歷史資料，而不是每次都重新對 TWSE 發出好幾天份的請求——這樣可以把「多天歷史資料」這個目前最花時間的部分，從單次執行的關遉路徑上整個拿掉。代價是剛部署的前幾天，Blobs 裡還沒有足夠的歷史資料可以用，量能異常因子會暫時是中性值，需要幾天才能「暖機」到有完整資料。
+
+**產出檔案（修改）**：
+```
+netlify/functions/lib/history.mjs
+netlify/functions/lib/institutional.mjs
+netlify/functions/scan.mjs
+netlify/functions/_test-integration-scan.mjs
+```
+
+---
+
+## 下一階段預告（尚未開始）
+
+- 使用者重新部署，重新驗證是否還會逾時
+- 若仍逾時，實作「排程抓資料存 Blobs + scan.mjs 只讀 Blobs」的架構調整
+- TPEx 欄位對應、T86 date 參數可靠性、Blobs 讀寫、排程註冊、前端視覺呈現
+
+---
+
+## 階段 15：改成 Blobs 累積式歷史資料架構（本階段）
+
+**目標**：階段 14 的平行化＋縮減天數還是逾時，需要真正把「多天歷史資料」這個最花時間的部分從關鍵路徑上拿掉，而不是想辦法把它塞進 30 秒裡。使用者提議「分開區間抓」或「分開排程」，討論後選擇更簡潔的方案：不用兩支協調的排程，讓 `scan.mjs` 每天執行時「順手」把當天資料存進 Blobs 累積，自然形成滾動歷史。
+
+**完成事項**：
+1. `lib/volume-archive.mjs`（新增）：
+   - `appendDailySnapshot`：把某一天的成交量快照存進 Blobs，同一天重複執行會覆蓋而不是重複累加，並維護一份日期索引
+   - `getRecentVolumeHistory`：讀取最近 N 天的快照組成歷史資料，回傳格式跟原本 `history.mjs` 的 `fetchVolumeHistory` 完全一致（`screen.mjs` 完全不用改）
+   - 保留最近 15 天，超過的舊快照會被主動刪除，避免 Blobs 無限增長
+   - 跟 `storage.mjs` 一樣用「可注入 store」的設計，測試不用連真實 Blobs 環境
+2. `scan.mjs` 大改：
+   - 移除現場抓多天歷史資料的呼叫，改成平行讀取 Blobs 累積庫（`getRecentVolumeHistory`）
+   - 算完之後，把今天的資料存進累積庫（`appendDailySnapshot`），供明天使用
+   - `dataSourceStatus` 新增 `historyArchive` 欄位，清楚回報「累積了幾天、夠不夠、有沒有寫入失敗」
+3. `backfill-history.mjs`（新增）：一次性手動工具，沿用舊的 `history.mjs` 現場抓取邏輯，把過去幾天的真實資料直接灌進 Blobs 累積庫，讓使用者部署後不用乾等 2-3 天自然暖機。刻意不加排程設定，只給手動觸發，且逾時了也無妨（純加速用，非必需）
+4. `history.mjs`（保留但改變角色）：不再被 `scan.mjs` 直接使用，只被 `backfill-history.mjs` 使用
+5. 測試大幅調整以反映新架構：
+   - 新增 `_test-volume-archive.mjs`（11 案例）
+   - `_test-integration-scan.mjs`／`_test-schema-consistency.mjs`／`_test-edge-tpex-mismatch.mjs` 因為這個測試環境沒有真實 Blobs，過去依賴「scan.mjs 現場抓歷史資料」的假資料設計整套失效，改成驗證「沒有 Blobs 時應該優雅降級成空觀察榜＋清楚的狀態訊息」，而不是想辦法在測試裡繞過 Blobs 限制硬湊出資料。原本「排名邏輯本身對不對」的覆蓋率由 `_test-screen.mjs`（不依賴網路/Blobs，直接建構輸入）保留，沒有因此漏掉
+
+**驗證方式**：`npm run test`，94 個測試案例，全數通過；`npm run build` 前端建置正常
+
+**已知未完成 / 待驗證**：
+- **這次的修正沒辦法在這個環境驗證「Netlify 上實際執行時間有沒有真的縮短到安全範圍」**，只能確認邏輯正確跟本地測試通過，實際效果要使用者重新部署後才知道
+- 剛部署的前幾天（或還沒跑 `backfill-history`）觀察榜會是空的，這是設計上的已知行為，不是 bug，已經寫進 DEPLOY_CHECKLIST.md
+- `backfill-history.mjs` 本身還是用舊的現場多天抓取邏輯，理論上還是有機會逼近逾時上限，但因為不在自動化的關鍵路徑上、且是一次性手動工具，风险可以接受
+- TPEx 欄位、T86 date 參數可靠性、Blobs 真實讀寫、排程註冊、前端視覺呈現：同前面階段
+
+**產出檔案（新增/修改）**：
+```
+netlify/functions/lib/volume-archive.mjs（新增）
+netlify/functions/backfill-history.mjs（新增）
+netlify/functions/scan.mjs（大改）
+netlify/functions/_test-volume-archive.mjs（新增）
+netlify/functions/_test-integration-scan.mjs（重寫）
+netlify/functions/_test-schema-consistency.mjs（重寫）
+netlify/functions/_test-edge-all-sources-fail.mjs（修改）
+netlify/functions/_test-edge-tpex-mismatch.mjs（修改）
+src/sampleData.js（修改，加入 historyArchive 欄位）
+```
+
+---
+
+## 階段 16：補上 backfill-history.mjs 的整合測試（本階段）
+
+**目標**：階段 15 新增的 `backfill-history.mjs` 當時只做了語法檢查，沒有像 `scan.mjs` 一樣寫端對端整合測試。使用者追問「這部分完成了嗎」，老實檢視後承認還沒有，補上。
+
+**完成事項**：
+`_test-integration-backfill.mjs`：直接呼叫 `backfill-history.mjs` 的 handler，驗證兩種情境：
+- 歷史資料抓得到，但這個測試環境沒有真實 Blobs 可寫入 → 應優雅回傳 500 + 清楚錯誤訊息，而不是未捕捉例外崩潰
+- 連歷史資料都抓不到（TWSE 端點全部失敗）→ 應回傳 500，且錯誤訊息明確指出「沒有抓到任何歷史交易日資料」
+
+4 個案例全過，確認 `backfill-history.mjs` 在異常情況下的降級行為符合預期。
+
+**驗證方式**：`npm run test`，98 個測試案例，全數通過
+
+**已知的一個小缺口（沒有動手修，先記錄）**：
+`backfill-history.mjs` 裡把多天資料寫進 Blobs 的迴圈沒有「單一天寫入失敗不影響其他天」的保護——如果第一天寫入成功、第二天失敗，目前會讓整個請求回傳 500，即使第一天其實已經寫成功了。這在真實 Netlify 環境下風險不高（Blobs 通常要嘛整體能用、要嘛整體不能用，不太會只有某一天寫入特別失敗），而且這支本來就是「錦上添花」的手動工具，不在自動化的關鍵路徑上，先不處理，記錄下來備查。
+
+**產出檔案（新增）**：
+```
+netlify/functions/_test-integration-backfill.mjs
+```
+
+---
+
+## 下一階段預告（尚未開始）
+
+- 使用者重新部署，執行 DEPLOY_CHECKLIST.md（含新增的第 3.5 步 `backfill-history`），確認 `scan` 不再逾時
+- TPEx 欄位對應、T86 date 參數可靠性、Blobs 讀寫、排程註冊、前端視覺呈現
+
 

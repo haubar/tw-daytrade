@@ -61,7 +61,7 @@ export async function fetchInstitutionalNetBuy(date = new Date()) {
   const requestedDate = `${y}-${m}-${d}`;
 
   const url = `${T86_URL_BASE}?response=html&date=${dateParam}&selectType=ALL`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) {
     throw new Error(`三大法人買賣超日報端點回應錯誤: HTTP ${res.status}`);
   }

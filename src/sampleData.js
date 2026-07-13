@@ -13,6 +13,7 @@ export const sampleScanResult = {
     twse: 'ok (1023 檔)',
     tpex: 'ok (812 檔)',
     institutional: 'ok (987 檔)',
+    historyArchive: 'ok（累積 3/3 天，天數足夠）',
   },
   historicalDatesUsed: ['2026-07-06', '2026-07-03', '2026-07-02', '2026-07-01', '2026-06-30'],
   marketChangePercent: 0.82,

@@ -7,6 +7,15 @@
 // 的 date 參數不完全可靠——實測發現指定 2026-07-02，卻收到 2026-07-07 的資料。
 // 因此這裡的策略是：發送請求後一定要從「回傳資料本身的日期欄位」確認實際拿到哪一天的資料，
 // 不能只信任送出去的參數。重複日期或無法辨識的日期會被跳過，直到蒐集到足夠的獨立交易日。
+//
+// 效能限制（部署到 Netlify 後實測發現）：
+// scan.mjs 因為有 export const config = { schedule }，屬於 Netlify 的 Scheduled Function，
+// 這類 function 不管用什麼方式呼叫，執行時間上限固定是 30 秒，跟付費方案無關。
+// 抓歷史資料是整個流程裡最花時間的部分（要對同一個端點發出多筆全市場資料的請求），
+// 所以這裡把預設抓取天數從原本規劃的 5 天降到 3 天、候選嘗試次數從 12 降到 6，
+// 用「均量統計基礎稍微變小」換取「大幅降低逾時風險」。之後如果確認有更多執行時間餘裕，
+// 或者改成把歷史資料改成每日累積存進 Netlify Blobs（不用每次都重新抓好幾天），
+// 可以再把天數調回來。
 
 import { parseCsv } from './csv.mjs';
 import { normalizeTwseCsvRow, extractDateFromCsvRow, isTradableRow } from './normalize.mjs';
@@ -50,11 +59,13 @@ export function getPastTradingDayCandidates(referenceDate, count) {
 
 /**
  * 抓取單一候選日期的市場快照，回傳正規化後的資料 + 資料本身標示的實際日期。
+ * 加上請求逾時保護（8 秒）：Netlify Function 本身的執行時間就有硬性上限，
+ * 單一個候選日期的請求如果卡住不回應，不該讓它拖垮整個 fetchVolumeHistory 的預算。
  * @param {Date} dateParam
  */
 async function fetchOneDay(dateParam) {
   const url = `${HISTORY_URL_BASE}?response=json&date=${formatDateParam(dateParam)}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) {
     throw new Error(`歷史資料端點回應錯誤: HTTP ${res.status}`);
   }
@@ -86,12 +97,12 @@ async function fetchOneDay(dateParam) {
  * （逾時 30 秒，錯誤訊息只會顯示籠統的「unknown error」，不會直接告訴你是逾時）。
  * 平行發出後，總等待時間變成「最慢那一個請求的時間」，而不是「所有請求時間的總和」。
  *
- * @param {number} targetDays 想要蒐集到的獨立交易日數量（例如 5）
+ * @param {number} targetDays 想要蒐集到的獨立交易日數量（預設 3，見下方效能筆記）
  * @param {Date} [referenceDate] 參考日（預設今天），主要方便測試時固定日期
- * @param {number} [maxAttempts] 最多嘗試幾個候選日期，避免因為端點異常或重複日期導致蒐集不到足夠天數
+ * @param {number} [maxAttempts] 最多嘗試幾個候選日期，避免因為端點異常或重複日期導致蒐集不到足夠天數（預設 6）
  * @returns {Promise<{volumeHistory: Map<string, number[]>, datesUsed: string[]}>}
  */
-export async function fetchVolumeHistory(targetDays = 5, referenceDate = new Date(), maxAttempts = 12) {
+export async function fetchVolumeHistory(targetDays = 3, referenceDate = new Date(), maxAttempts = 6) {
   const candidates = getPastTradingDayCandidates(referenceDate, maxAttempts);
 
   // 全部候選日期一次平行發出，不等前一個回來才發下一個

@@ -67,15 +67,31 @@ https://你的站台.netlify.app/.netlify/functions/fetch-daily-quotes
 https://你的站台.netlify.app/.netlify/functions/scan
 ```
 
-這一步會比較慢（要抓當日行情 + 5 天歷史資料 + 法人資料），等個 10-30 秒是正常的。
+**重要更新**：歷史資料現在是讀 Netlify Blobs 累積庫，不再現場跟 TWSE 要好幾天份資料，這一步應該會比之前快很多（幾秒內）。
 
-- [ ] 確認回應是完整的 JSON，`longWatchlist`／`shortWatchlist` 都有資料
+- [ ] 確認回應是完整的 JSON
+- [ ] 檢查 `dataSourceStatus.historyArchive`：
+  - 如果是第一次執行（或還沒跑過 `backfill-history`），這裡會顯示「失敗」或「累積 0/3 天」——**這是正常的**，代表歷史累積庫還是空的，`longWatchlist`／`shortWatchlist` 這次會是空陣列，不用緊張
+  - 想要立刻有完整資料可以看，回到本清單的**第 3.5 步**先跑一次 `backfill-history`
 - [ ] 檢查 `dataSourceStatus.institutional`：
   - 如果顯示 `ok (數字 檔)` 沒有警告符號 ⚠，代表法人資料抓取正常、日期也對得上
-  - 如果有 `⚠ 法人買賣超資料日期與預期不符...`，把訊息貼給我，代表 T86 端點的 `date` 參數真的不可靠（跟 `history.mjs` 那邊發現的問題一樣），需要我補強成跟 `history.mjs` 一樣「往前多試幾天」的邏輯
+  - 如果有 `⚠ 法人買賣超資料日期與預期不符...`，把訊息貼給我
   - 如果顯示 `失敗: ...`，把錯誤訊息貼給我
-- [ ] 檢查 `historicalDatesUsed` 是不是 5 個不重複的日期，且都是合理的最近交易日
-- [ ] 檢查有沒有 `storageWarning` 欄位出現在回應裡——如果有，代表 Netlify Blobs 寫入失敗，把訊息貼給我（可能是 Blobs 需要額外設定，或方案限制）
+- [ ] 檢查有沒有 `storageWarning` 欄位出現在回應裡——如果有，代表 Netlify Blobs 寫入失敗，把訊息貼給我
+
+---
+
+## 3.5. （建議）先補一次歷史資料，加速暖機
+
+打開：
+```
+https://你的站台.netlify.app/.netlify/functions/backfill-history
+```
+
+這支 function 會現場抓 3 天的真實歷史資料，直接存進 Blobs 累積庫，讓下一次 `scan` 就能有完整的量能異常因子可看，不用乾等 2-3 個交易日自然累積。
+
+- [ ] 確認回應包含 `datesBackfilled`，裡面有 3 個日期
+- [ ] 如果這一步逾時或失敗，不用緊張——這只是「加速」用，讓 `scan.mjs` 每天自然執行幾次就會自己累積齊全，跳過這步繼續往下走也沒關係
 
 ---
 
@@ -105,6 +121,8 @@ Netlify 後台 → 你的站台 → **Functions** 分頁：
 ## 7. 親自檢查前端畫面（我這邊做不到的部分）
 
 打開你的站台首頁 `https://你的站台.netlify.app`：
+
+**先提醒**：如果你還沒跑過第 3.5 步的 `backfill-history`，畫面上的觀察榜可能會是空的（因為歷史累積庫還沒暖機），這是正常的，不是前端壞了。跑過 `backfill-history` 再重新整理頁面看看。
 
 - [ ] 資料時間、大盤漲跌幅、候選檔數這些數字看起來合理嗎？
 - [ ] 多方觀察榜是不是紅色（漲）、空方觀察榜是不是綠色（跌）？—— **這點特別重要，因為台股紅漲綠跌跟美股相反，如果你覺得顏色「怪怪的」，很可能是我哪裡弄反了，要馬上跟我說**

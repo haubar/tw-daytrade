@@ -1,11 +1,14 @@
 // netlify/functions/_test-integration-scan.mjs
 // 執行方式：npm run test:integration
 //
-// QA 整合測試：之前每個模組（normalize/history/factors/screen/institutional/storage）
-// 都是各自獨立測試，從沒有人真的完整跑過一次 scan.mjs 的實際 handler，
-// 驗證「這些模組接在一起真的能動」。這支測試用假的 global.fetch 攔截所有對外請求，
-// 直接呼叫 scan.mjs 的 default export（跟 Netlify 實際呼叫它的方式一樣），
-// 確認整條流程從頭到尾產出正確、結構完整的結果。
+// QA 整合測試：直接呼叫 scan.mjs 的 default export（跟 Netlify 實際呼叫它的方式一樣），
+// 用假的 global.fetch 攔截 TWSE/TPEx/法人資料等外部請求，驗證整條流程從頭到尾的行為。
+//
+// 重要說明：scan.mjs 的歷史資料現在是讀 Netlify Blobs（見 volume-archive.mjs），
+// 這個測試環境沒有真實的 Blobs 可用，所以歷史資料讀取一定會失敗——這裡驗證的重點是
+// 「這個必然會發生的降級狀況有沒有被優雅處理掉」（空觀察榜 + 清楚的狀態訊息，而不是整個
+// function 掛掉）。「排名邏輯本身對不對」這件事，已經由 _test-screen.mjs 用直接建構的
+// volumeHistory 驗證過了，不需要在這裡重複測。
 
 const originalFetch = globalThis.fetch;
 let passed = 0;
@@ -24,7 +27,6 @@ function check(condition, label, detail = '') {
 // ---- 建立假資料 ----
 
 function twseJsonFixture() {
-  // 兩檔股票：一檔明顯強勢、一檔明顯弱勢，方便驗證多空觀察榜排序正確
   return [
     {
       Code: '2408', Name: '南亞科', TradeVolume: '50000000', TradeValue: '20000000000',
@@ -46,15 +48,6 @@ function tpexJsonFixture() {
       Close: '158.5', TradingShares: '3000000', Change: '3.0',
     },
   ];
-}
-
-function historyCsvFixture(callIndex) {
-  // 每次呼叫回傳不同的假日期（民國年格式），確保 history.mjs 的「去重」邏輯可以順利蒐集到 5 個不同交易日
-  const fakeRocDate = `115070${callIndex}`; // 1150701, 1150702, ...
-  const header = '日期,證券代號,證券名稱,成交股數,成交金額,開盤價,最高價,最低價,收盤價,漲跌價差,成交筆數';
-  const row1101 = `"${fakeRocDate}","2408","南亞科","10000000","4000000000","440.0","445.0","435.0","440.0","0.0","8000"`;
-  const row3661 = `"${fakeRocDate}","3661","世芯-KY","2000000","5000000000","2440.0","2450.0","2400.0","2440.0","0.0","4000"`;
-  return `${header}\n${row1101}\n${row3661}`;
 }
 
 function t86HtmlFixture(todayRocDateLabel) {
@@ -80,8 +73,9 @@ function todayAsRocDateLabel() {
 }
 
 // ---- 安裝假的 fetch，依 URL 分流到對應的假資料 ----
-
-let historyCallCount = 0;
+// 注意：不再需要處理 rwd/zh/afterTrading/STOCK_DAY_ALL 這個 URL，因為 scan.mjs 已經不會
+// 現場抓多天歷史資料了（改讀 Blobs）。如果這個測試意外打到那個 URL，代表 scan.mjs 又
+// 回頭在用舊的抓取方式，下面的 throw 會讓測試明確失敗，提醒要檢查架構是不是跑掉了。
 
 globalThis.fetch = async (url) => {
   const urlStr = String(url);
@@ -91,14 +85,6 @@ globalThis.fetch = async (url) => {
   }
   if (urlStr.includes('tpex.org.tw')) {
     return { ok: true, json: async () => tpexJsonFixture() };
-  }
-  if (urlStr.includes('rwd/zh/afterTrading/STOCK_DAY_ALL')) {
-    // 注意：一定要在這裡就把 callIndex 快照成區域變數，不能讓下面的 text() 閉包直接引用
-    // 外層的 historyCallCount——history.mjs 平行發送所有候選日期的請求後，
-    // 所有 fetch() 呼叫幾乎同時觸發，等到 text() 真正被呼叫時 historyCallCount 早就被
-    // 其他呼叫累加到最終值了，會導致每筆假資料都拿到同一個（而且通常是錯的）日期。
-    const callIndex = ++historyCallCount;
-    return { ok: true, text: async () => historyCsvFixture(callIndex) };
   }
   if (urlStr.includes('fund/T86')) {
     return { ok: true, text: async () => t86HtmlFixture(todayAsRocDateLabel()) };
@@ -124,31 +110,32 @@ try {
 }
 
 check(response.status === 200, 'scan.mjs 應回傳 HTTP 200', `實際: ${response.status}`);
-check(Array.isArray(body.longWatchlist), '回應應包含 longWatchlist 陣列');
-check(Array.isArray(body.shortWatchlist), '回應應包含 shortWatchlist 陣列');
-check(body.longWatchlist.length > 0, '多方觀察榜應該有資料（不是空的）', `實際筆數: ${body.longWatchlist?.length}`);
+check(Array.isArray(body.longWatchlist), '回應應包含 longWatchlist 陣列（即使是空的，型別也要是陣列）');
+check(Array.isArray(body.shortWatchlist), '回應應包含 shortWatchlist 陣列（即使是空的，型別也要是陣列）');
+
+// 這個測試環境沒有真實 Blobs，讀取歷史資料一定會失敗 → 所有股票都因為「沒有歷史資料」被排除 →
+// 觀察榜會是空的。這是預期中的優雅降級行為，不是 bug。
 check(
-  body.longWatchlist[0]?.code === '2408',
-  '南亞科（大漲+爆量+法人買超）應該是多方觀察榜第一名',
-  `實際第一名: ${body.longWatchlist[0]?.code}`
+  body.longWatchlist.length === 0 && body.shortWatchlist.length === 0,
+  '沒有真實 Blobs 環境時，觀察榜應該優雅降級成空陣列（因為沒有歷史資料可用），而不是報錯或回傳假資料',
+  `實際: long=${body.longWatchlist?.length}, short=${body.shortWatchlist?.length}`
 );
 check(
-  body.shortWatchlist[0]?.code === '3661',
-  '世芯-KY（大跌+法人賣超）應該是空方觀察榜第一名',
-  `實際第一名: ${body.shortWatchlist[0]?.code}`
+  typeof body.dataSourceStatus?.historyArchive === 'string' && body.dataSourceStatus.historyArchive.includes('失敗'),
+  'dataSourceStatus.historyArchive 應該清楚標示歷史資料讀取失敗',
+  `實際: ${body.dataSourceStatus?.historyArchive}`
 );
-check(body.historicalDatesUsed?.length === 5, '應該蒐集到 5 個歷史交易日', `實際: ${body.historicalDatesUsed?.length}`);
 check(
   typeof body.dataSourceStatus?.twse === 'string' && body.dataSourceStatus.twse.includes('ok'),
-  'TWSE 資料來源狀態應顯示 ok'
+  'TWSE 資料來源狀態應顯示 ok（不受歷史資料失敗影響）'
 );
 check(
   typeof body.dataSourceStatus?.tpex === 'string' && body.dataSourceStatus.tpex.includes('ok'),
-  'TPEx 資料來源狀態應顯示 ok'
+  'TPEx 資料來源狀態應顯示 ok（不受歷史資料失敗影響）'
 );
 check(
   typeof body.dataSourceStatus?.institutional === 'string' && body.dataSourceStatus.institutional.includes('ok'),
-  '法人資料來源狀態應顯示 ok（日期有對上，不該出現警告）',
+  '法人資料來源狀態應顯示 ok（不受歷史資料失敗影響，且日期有對上）',
   `實際: ${body.dataSourceStatus?.institutional}`
 );
 check(typeof body.disclaimer === 'string' && body.disclaimer.length > 0, '應包含免責聲明文字');
@@ -157,24 +144,9 @@ check(typeof body.disclaimer === 'string' && body.disclaimer.length > 0, '應包
 // 這裡驗證的重點是「這個必然會失敗的狀況，有沒有被優雅處理掉，而不是讓整個 function 掛掉」
 check(
   typeof body.storageWarning === 'string',
-  '在沒有真實 Netlify Blobs 環境的情況下，應該要有 storageWarning 欄位（代表存檔失敗有被優雅捕捉，而不是讓整個請求失敗）',
+  '在沒有真實 Netlify Blobs 環境的情況下，應該要有 storageWarning 欄位（代表結果存檔失敗有被優雅捕捉）',
   `實際 storageWarning: ${body.storageWarning}`
 );
-check(
-  response.status === 200,
-  '即使 Blobs 寫入失敗，整個請求仍應回傳 200（不因為次要功能失敗就讓主要功能一起掛掉）'
-);
-
-// 每一筆觀察榜資料都要有完整的四因子貢獻度欄位，前端 ScoreBar 才不會畫出 NaN
-const allFieldsPresent = [...body.longWatchlist, ...body.shortWatchlist].every(
-  (item) =>
-    typeof item.volumeContribution === 'number' &&
-    typeof item.gapContribution === 'number' &&
-    typeof item.relativeStrengthContribution === 'number' &&
-    typeof item.institutionalContribution === 'number' &&
-    typeof item.score === 'number'
-);
-check(allFieldsPresent, '多空觀察榜每一筆都應該有完整的四因子貢獻度欄位（前端因子解剖條會用到）');
 
 globalThis.fetch = originalFetch;
 

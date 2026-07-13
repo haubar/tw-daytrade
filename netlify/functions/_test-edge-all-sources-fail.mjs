@@ -9,7 +9,6 @@ globalThis.fetch = async (url) => {
   const s = String(url);
   if (s.includes('openapi.twse.com.tw')) return { ok: false, status: 503 };
   if (s.includes('tpex.org.tw')) return { ok: false, status: 503 };
-  if (s.includes('rwd/zh/afterTrading')) return { ok: true, text: async () => '' };
   if (s.includes('fund/T86')) return { ok: false, status: 503 };
   throw new Error('未預期的 URL: ' + s);
 };

@@ -39,9 +39,15 @@ async function fetchTodayTpexQuotes() {
 export default async (req) => {
   const startedAt = Date.now();
   try {
-    const [twseResult, tpexResult] = await Promise.allSettled([
+    // 四個資料來源彼此獨立（歷史資料、法人資料都不需要等 TWSE/TPEx 的結果才能開始抓），
+    // 全部平行發出，不要排隊序列等待。實測發現序列版本很容易讓整個 function 超過
+    // Netlify 的執行時間上限而逾時（逾時時瀏覽器只會看到籠統的「unknown error」，
+    // 不會直接告訴你是逾時，所以這個坑不容易一眼看出來）。
+    const [twseResult, tpexResult, historyResult, institutionalResult] = await Promise.allSettled([
       fetchTodayTwseQuotes(),
       fetchTodayTpexQuotes(),
+      fetchVolumeHistory(5),
+      fetchInstitutionalNetBuy(),
     ]);
 
     const todayQuotes = [
@@ -53,23 +59,25 @@ export default async (req) => {
       throw new Error('今日行情抓取失敗，TWSE 與 TPEx 皆無資料可用');
     }
 
-    const { volumeHistory, datesUsed } = await fetchVolumeHistory(5);
+    // fetchVolumeHistory 內部已經把「單一天請求失敗」的情況處理掉了，理論上不會整個 reject，
+    // 但還是用 allSettled 保守處理，避免它萬一真的 reject 就讓整個 scan 跟著死掉
+    const { volumeHistory, datesUsed } =
+      historyResult.status === 'fulfilled' ? historyResult.value : { volumeHistory: new Map(), datesUsed: [] };
 
     // 法人買賣超抓取失敗不應該讓整個掃描失敗——沒有這個因子還是可以用其他三個因子繼續產生結果，
-    // 只是這次的結果會少一個訊號來源，所以這裡單獨包 try/catch，失敗就當作「全部無資料」（中性）繼續跑。
+    // 只是這次的結果會少一個訊號來源，這裡把「抓取失敗」跟「抓到但日期對不上」分開判斷。
     let institutionalNetBuy = new Map();
     let institutionalWarning = null;
-    try {
-      const institutionalResult = await fetchInstitutionalNetBuy();
-      institutionalNetBuy = institutionalResult.netBuyByCode;
-      if (institutionalResult.dateMismatch) {
+    if (institutionalResult.status === 'fulfilled') {
+      institutionalNetBuy = institutionalResult.value.netBuyByCode;
+      if (institutionalResult.value.dateMismatch) {
         // 比照 history.mjs 驗證歷史資料端點時發現的問題：date 參數不一定可靠，
         // 這裡不是直接丟棄資料（資料本身可能還是有效的，只是不是今天的），而是清楚標記出來，
         // 讓看結果的人知道這個因子可能不是當日資料，之後再視情況決定要不要改成重試或直接排除。
-        institutionalWarning = `法人買賣超資料日期與預期不符（預期 ${institutionalResult.requestedDate}，實際拿到 ${institutionalResult.actualDate}），本次結果可能不是最新的法人資料`;
+        institutionalWarning = `法人買賣超資料日期與預期不符（預期 ${institutionalResult.value.requestedDate}，實際拿到 ${institutionalResult.value.actualDate}），本次結果可能不是最新的法人資料`;
       }
-    } catch (e) {
-      institutionalWarning = `法人買賣超資料抓取失敗（本次結果的法人因子將全部視為中性）: ${e.message}`;
+    } else {
+      institutionalWarning = `法人買賣超資料抓取失敗（本次結果的法人因子將全部視為中性）: ${institutionalResult.reason.message}`;
     }
 
     const result = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, { topN: 30 });

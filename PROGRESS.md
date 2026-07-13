@@ -376,8 +376,40 @@ TEST_REPORT.md（新增）
 
 ---
 
+## 階段 13：部署後 debug——修正 scan.mjs 逾時導致 function crash（本階段）
+
+**目標**：使用者實際部署到 Netlify 後，手動觸發 `/scan` 出現「This function has crashed / unknown error」。
+
+**根因排查過程**：
+Netlify function log 顯示兩次呼叫的 `Duration` 都剛好是 `30000 ms`——兩次都卡在同一個數字，不是隨機的執行時間分佈，判斷是**逾時**而不是程式碼例外。Netlify 逾時時瀏覽器看到的訊息剛好也是籠統的「unknown error」，跟真正的 crash 長得一樣，容易誤判方向。
+
+**根本原因**：`history.mjs` 的 `fetchVolumeHistory` 用 `for...of` 迴圈序列抓取最多 12 個候選交易日，每次都要完整等上一個請求回應才發下一個；加上 `scan.mjs` 原本是「TWSE+TPEx（平行）→ 等歷史資料 → 等法人資料」的序列結構，三個階段的等待時間加總起來很容易超過 Netlify 的執行時間上限。這是 Phase 1/2 開發時只驗證邏輯正確性、沒有在真實網路延遲下驗證效能的技術債。
+
+**完成事項**：
+1. `history.mjs`：`fetchVolumeHistory` 改成用 `Promise.allSettled` 把全部候選日期的請求一次平行發出，不再序列等待；處理結果時依候選日期原本順序（由近到遠）篩選，確保平行化前後的 `datesUsed` 結果順序一致
+2. `scan.mjs`：TWSE、TPEx、歷史資料、法人資料四個彼此獨立的資料來源全部改成一次 `Promise.allSettled` 平行發出，不再是「抓完一批才抓下一批」的階段式序列
+3. **回歸測試時發現並修正一個測試本身的 bug**：`_test-integration-scan.mjs` 的假 `fetch` 函式裡，`text: async () => historyCsvFixture(historyCallCount)` 直接引用外層可變的 `historyCallCount` 變數（閉包陷阱）。序列版本因為每個請求完整跑完才發下一個，恰好沒有暴露這個問題；改成平行後，所有請求幾乎同時觸發，等到 `.text()` 真正被呼叫時 `historyCallCount` 已經被其他呼叫累加到最終值，導致每筆假資料都拿到同一個（而且格式錯誤）的日期。修正方式：呼叫當下就用區域變數把值快照起來，不要讓返回的閉包直接引用外層可變變數
+
+**驗證方式**：`npm run test`，87 個測試案例，全數通過（過程中先出現 4 個失敗，定位到是測試 mock 本身的閉包問題，修正測試後全過，不是 production code 的問題）
+
+**已知未完成 / 待驗證**：
+- 這次修正的是「大幅縮短總執行時間」，但沒有能力在這個環境實測「改完之後在 Netlify 上真的不會逾時了」，需要使用者重新部署後在 DEPLOY_CHECKLIST.md 第 4 步重新驗證
+- 如果平行化後還是偶爾逾時（例如 TWSE/TPEx 全市場資料本身回應就很慢），下一步可以考慮把 `scan.mjs` 拆成「排程背景執行」跟「手動查詢」兩支不同的 function，背景執行可以用 Netlify Background Functions（執行時間上限更長），手動查詢則改成讀 Blobs 裡上次背景執行存的結果，不用每次都重新抓一次全市場資料
+- TPEx 欄位、T86 date 參數可靠性、Blobs 讀寫、排程註冊、前端視覺呈現：同前面階段
+
+**產出檔案（修改）**：
+```
+netlify/functions/lib/history.mjs
+netlify/functions/scan.mjs
+netlify/functions/_test-integration-scan.mjs
+```
+
+---
+
 ## 下一階段預告（尚未開始）
 
-- 部署到 Netlify，實測並修正 TPEx 欄位對應、驗證 T86 的 `date` 參數是否可靠、確認 Blobs 真的能存取、**請使用者親自檢查前端視覺呈現**（詳見 DEPLOY_CHECKLIST.md）
+- 使用者重新部署，重新驗證 DEPLOY_CHECKLIST.md 第 4 步是否還會逾時
+- 若仍逾時，考慮拆成排程背景執行 + 手動查詢兩支 function 的架構
+- TPEx 欄位對應、T86 date 參數可靠性、Blobs 讀寫、排程註冊、前端視覺呈現
 
 

@@ -78,22 +78,35 @@ async function fetchOneDay(dateParam) {
  * @param {number} [maxAttempts] 最多嘗試幾個候選日期，避免因為端點異常無限嘗試
  * @returns {Promise<{volumeHistory: Map<string, number[]>, datesUsed: string[]}>}
  */
+/**
+ * 抓取過去 N 個「獨立交易日」的成交量歷史，組成 code -> volumes[] 的 map。
+ *
+ * 效能筆記：這裡刻意把候選日期的請求「全部平行發出」，而不是一天一天序列等待。
+ * 部署到 Netlify 後實測發現序列版本會讓整個 scan.mjs 超過 Netlify Function 的執行時間上限
+ * （逾時 30 秒，錯誤訊息只會顯示籠統的「unknown error」，不會直接告訴你是逾時）。
+ * 平行發出後，總等待時間變成「最慢那一個請求的時間」，而不是「所有請求時間的總和」。
+ *
+ * @param {number} targetDays 想要蒐集到的獨立交易日數量（例如 5）
+ * @param {Date} [referenceDate] 參考日（預設今天），主要方便測試時固定日期
+ * @param {number} [maxAttempts] 最多嘗試幾個候選日期，避免因為端點異常或重複日期導致蒐集不到足夠天數
+ * @returns {Promise<{volumeHistory: Map<string, number[]>, datesUsed: string[]}>}
+ */
 export async function fetchVolumeHistory(targetDays = 5, referenceDate = new Date(), maxAttempts = 12) {
   const candidates = getPastTradingDayCandidates(referenceDate, maxAttempts);
+
+  // 全部候選日期一次平行發出，不等前一個回來才發下一個
+  const settledResults = await Promise.allSettled(candidates.map((candidate) => fetchOneDay(candidate)));
+
   const volumeHistory = new Map();
   const datesUsed = [];
 
-  for (const candidate of candidates) {
+  // 依候選日期原本的順序（由近到遠）處理結果，確保「同一份候選清單」不管有沒有平行化，
+  // 篩出來的 datesUsed 順序都一致，方便測試跟除錯時判斷行為有沒有跑掉。
+  for (const settled of settledResults) {
     if (datesUsed.length >= targetDays) break;
+    if (settled.status !== 'fulfilled') continue; // 單一天請求失敗不影響整體流程，跳過
 
-    let result;
-    try {
-      result = await fetchOneDay(candidate);
-    } catch (e) {
-      // 單一天請求失敗不影響整體流程，跳過繼續嘗試下一個候選日
-      continue;
-    }
-
+    const result = settled.value;
     if (!result.actualDate || datesUsed.includes(result.actualDate)) {
       // 拿到重複日期（例如端點忽略了 date 參數），跳過避免重複計算
       continue;

@@ -93,8 +93,12 @@ globalThis.fetch = async (url) => {
     return { ok: true, json: async () => tpexJsonFixture() };
   }
   if (urlStr.includes('rwd/zh/afterTrading/STOCK_DAY_ALL')) {
-    historyCallCount++;
-    return { ok: true, text: async () => historyCsvFixture(historyCallCount) };
+    // 注意：一定要在這裡就把 callIndex 快照成區域變數，不能讓下面的 text() 閉包直接引用
+    // 外層的 historyCallCount——history.mjs 平行發送所有候選日期的請求後，
+    // 所有 fetch() 呼叫幾乎同時觸發，等到 text() 真正被呼叫時 historyCallCount 早就被
+    // 其他呼叫累加到最終值了，會導致每筆假資料都拿到同一個（而且通常是錯的）日期。
+    const callIndex = ++historyCallCount;
+    return { ok: true, text: async () => historyCsvFixture(callIndex) };
   }
   if (urlStr.includes('fund/T86')) {
     return { ok: true, text: async () => t86HtmlFixture(todayAsRocDateLabel()) };

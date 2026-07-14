@@ -14,6 +14,7 @@ import { getRecentVolumeHistory, appendDailySnapshot } from './lib/volume-archiv
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
 import { screenWatchlists } from './lib/screen.mjs';
 import { saveLatestScan } from './lib/storage.mjs';
+import { isWeekend } from './lib/trading-day.mjs';
 
 const TWSE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
 const TPEX_URL = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes';
@@ -64,13 +65,20 @@ export default async (req) => {
     }
 
     // 把今天的資料存進 Blobs 累積庫，讓「明天」執行時可以讀到今天的資料當作歷史的一部分。
-    // 這一步失敗不應該讓整個掃描失敗——頂多是「這一天沒被存進歷史」，累積速度變慢一點，
-    // 不影響這次掃描本身的結果，所以獨立包 try/catch。
+    // 如果今天是週六日（例如使用者手動觸發測試剛好選在週末），TWSE 端點還是會回傳「最近一個
+    // 交易日」的資料（例如週五的資料），但那筆資料不該被標記成「今天（週末）」存進歷史累積庫——
+    // 這樣會產生一筆假的非交易日資料，汙染量能異常因子的計算基礎（週五的量能會被誤算成
+    // 「這是週末當天的量能」，跟真正的週五那天分開計算，導致同一份資料被扭曲成兩筆不同的天）。
+    // 這一步失敗（或跳過）不應該讓整個掃描失敗，獨立包 try/catch。
     let archiveWarning = null;
-    try {
-      await appendDailySnapshot(todayDateStr, todayQuotes);
-    } catch (e) {
-      archiveWarning = `今日資料寫入歷史累積庫失敗（不影響本次結果，但明天的歷史資料會少這一天）: ${e.message}`;
+    if (isWeekend(new Date())) {
+      archiveWarning = '今天是非交易日（週末），不寫入歷史累積庫，避免產生無效的交易日資料';
+    } else {
+      try {
+        await appendDailySnapshot(todayDateStr, todayQuotes);
+      } catch (e) {
+        archiveWarning = `今日資料寫入歷史累積庫失敗（不影響本次結果，但明天的歷史資料會少這一天）: ${e.message}`;
+      }
     }
 
     // getRecentVolumeHistory 內部如果連不到 Blobs 會整個 reject，這裡保守處理成「視為沒有歷史資料」，

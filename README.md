@@ -50,7 +50,8 @@ tw-daytrade-scanner/
     └── lib/
         ├── normalize.mjs                   # 資料正規化：把不同來源／格式轉成統一格式
         ├── csv.mjs                         # 輕量 CSV 解析器（history.mjs 用）
-        ├── history.mjs                     # 現場抓取多天歷史資料（僅 backfill-history.mjs 使用，見下方說明）
+        ├── trading-day.mjs                  # 共用交易日邏輯：判斷週末、產生候選交易日清單
+        ├── history.mjs                     # 現場抓取多天歷史資料（僅 backfill-history.mjs 使用）
         ├── volume-archive.mjs               # 歷史成交量的 Blobs 累積儲存層（scan.mjs 實際使用的歷史資料來源）
         ├── factors.mjs                     # 因子計算：量能異常／跳空／相對強弱／法人買賣超／綜合評分／因子貢獻度
         ├── institutional.mjs                # 抓取三大法人買賣超日報
@@ -67,10 +68,16 @@ tw-daytrade-scanner/
 **代價**：剛部署（或 Blobs 累積庫是空的）的前幾天，累積天數不夠 3 天，量能異常因子會先是中性值，其他三個因子仍正常運作。可以執行以下步驟加速暖機：
 
 1. 部署完成後，打開一次 `https://你的站台.netlify.app/.netlify/functions/backfill-history`
-2. 這支 function 會現場抓 3 天的真實歷史資料，直接灌進 Blobs 累積庫
+2. 這支 function 會自動跳過週六日，找最近的交易日補進 Blobs 累積庫，並且**只補「還沒存過」的新日期**——重複打開幾次也不會補到重複的天，而是自動往更早的交易日繼續補
 3. 因為它一樣要現場抓多天資料，一樣有機會逼近執行時間上限——如果逾時了不用緊張，讓 `scan.mjs` 每天自然執行個 2-3 次就會自己累積齊全，這支只是「加速」用，不是必需品
 
 `history.mjs`（現場抓多天資料的舊邏輯）保留下來只給 `backfill-history.mjs` 使用，`scan.mjs` 本身已經不會呼叫它。
+
+**關於非交易日（週六日）**：
+- `scan.mjs` 如果在週末被手動觸發，TWSE 端點還是會回傳「最近一個交易日」的資料，但**不會**把這筆資料標記成「今天（週末）」寫進歷史累積庫——避免產生一筆假的非交易日資料，汙染量能異常因子的計算基礎
+- `backfill-history.mjs` 產生候選日期時就會跳過週六日，只找平日
+- 這兩處判斷週末的邏輯都來自同一個共用模組 `lib/trading-day.mjs`，避免兩邊各自寫一份容易長出不一致的行為
+- 目前只排除週六日，**沒有**排除國定假日（例如過年、清明連假），這是刻意的簡化——完整的台股交易日曆需要額外維護一份假日清單，遇到連假頂多是候選範圍要多找幾輪，不會產生錯誤結果（因為最終還是會用「回傳資料本身的日期」驗證）
 
 ## 關於「隔日沖分點因子」的重要說明
 
@@ -106,7 +113,7 @@ npm run dev
 
 ```bash
 npm install
-npm run test                # 跑全部測試（98 個案例，見 TEST_REPORT.md）
+npm run test                # 跑全部測試（110 個案例，見 TEST_REPORT.md）
 npm run test:fetch          # 資料正規化（JSON 格式）
 npm run test:csv            # CSV 解析器
 npm run test:normalize-csv  # 資料正規化（CSV 格式）
@@ -116,6 +123,8 @@ npm run test:screen         # 完整篩選流程整合測試
 npm run test:institutional  # 三大法人買賣超資料解析
 npm run test:storage        # Netlify Blobs 儲存層（用假的 store 物件測試）
 npm run test:volume-archive # 歷史成交量的 Blobs 累積儲存層
+npm run test:trading-day    # 交易日／週末判斷邏輯
+npm run test:backfill-pick  # backfill-history 挑選新交易日的核心邏輯
 npm run test:integration    # 端對端整合測試（完整模擬 scan.mjs 真實執行流程）
 npm run test:integration-backfill # backfill-history.mjs 的整合測試
 npm run test:schema         # 前後端資料結構一致性檢查

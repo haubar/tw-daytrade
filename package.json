@@ -15,12 +15,14 @@
     "test:institutional": "node netlify/functions/_test-institutional.mjs",
     "test:storage": "node netlify/functions/_test-storage.mjs",
     "test:volume-archive": "node netlify/functions/_test-volume-archive.mjs",
+    "test:trading-day": "node netlify/functions/_test-trading-day.mjs",
+    "test:backfill-pick": "node netlify/functions/_test-backfill-pick.mjs",
     "test:integration": "node netlify/functions/_test-integration-scan.mjs",
     "test:integration-backfill": "node netlify/functions/_test-integration-backfill.mjs",
     "test:integration-latest": "node netlify/functions/_test-integration-latest.mjs",
     "test:schema": "node netlify/functions/_test-schema-consistency.mjs",
     "test:edge-cases": "node netlify/functions/_test-edge-all-sources-fail.mjs && node netlify/functions/_test-edge-tpex-mismatch.mjs",
-    "test": "npm run test:fetch && npm run test:factors && npm run test:csv && npm run test:normalize-csv && npm run test:history && npm run test:screen && npm run test:institutional && npm run test:storage && npm run test:volume-archive && npm run test:integration && npm run test:integration-backfill && npm run test:integration-latest && npm run test:schema && npm run test:edge-cases"
+    "test": "npm run test:fetch && npm run test:factors && npm run test:csv && npm run test:normalize-csv && npm run test:history && npm run test:screen && npm run test:institutional && npm run test:storage && npm run test:volume-archive && npm run test:trading-day && npm run test:backfill-pick && npm run test:integration && npm run test:integration-backfill && npm run test:integration-latest && npm run test:schema && npm run test:edge-cases"
   },
   "dependencies": {
     "@netlify/blobs": "^8.1.0",

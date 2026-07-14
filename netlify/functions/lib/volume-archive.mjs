@@ -55,6 +55,16 @@ export async function appendDailySnapshot(dateStr, quotes, store = defaultStore(
 }
 
 /**
+ * 讀取目前已經存進 Blobs 累積庫的日期清單（新到舊排序），
+ * 給 backfill-history.mjs 判斷「哪些天已經有資料了，不用重複補」用。
+ * @param {Object} [store] 可注入的假 store（測試用）
+ * @returns {Promise<string[]>}
+ */
+export async function getArchivedDates(store = defaultStore()) {
+  return (await store.get(INDEX_KEY, { type: 'json' })) ?? [];
+}
+
+/**
  * 讀取最近 N 個已存的交易日快照，組成 code -> volumes[] 的 map
  * （跟原本 history.mjs 的 fetchVolumeHistory 回傳格式完全一致，screen.mjs 不用改）。
  *

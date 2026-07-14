@@ -529,4 +529,53 @@ netlify/functions/_test-integration-backfill.mjs
 - 使用者重新部署，執行 DEPLOY_CHECKLIST.md（含新增的第 3.5 步 `backfill-history`），確認 `scan` 不再逾時
 - TPEx 欄位對應、T86 date 參數可靠性、Blobs 讀寫、排程註冊、前端視覺呈現
 
+---
+
+## 階段 17：避開非交易日 + backfill 改成智慧跳過已存在的天數（本階段）
+
+**目標**：使用者提出兩個要求：(1) 抓取跟回填的資料都要避開週六日 (2) `backfill-history.mjs` 每次都補「還沒存過」的新交易日，而不是每次都補同樣的最近 3 天。
+
+**完成事項**：
+1. `lib/trading-day.mjs`（新增）：把「判斷週末」「產生候選交易日清單」抽成共用模組，避免 `history.mjs` 跟 `backfill-history.mjs` 各寫一份容易長出不一致的行為。`history.mjs` 改成從這裡匯入並重新匯出（保留舊有的 import 路徑相容性，不影響既有測試）
+2. `history.mjs`：把原本私有的 `fetchOneDay` 開放匯出，讓 `backfill-history.mjs` 可以針對「特定候選日期」個別抓取，不用被綁死在「抓最近 N 天」的固定邏輯裡
+3. `volume-archive.mjs` 新增 `getArchivedDates`：讀取目前已經存進 Blobs 累積庫的日期清單，給 backfill 判斷哪些天不用重複補
+4. `scan.mjs`：寫入歷史累積庫前先檢查今天是不是週末，是的話跳過寫入（TWSE 端點在週末還是會回傳最近一個交易日的資料，但不該把它標記成「今天（週末）」存進歷史，避免同一份交易日資料被扭曲成兩筆不同的天）
+5. `backfill-history.mjs` 整個重寫：
+   - 新增純函式 `pickNewTradingDays`：從一批候選日期的抓取結果裡，跳過已存在的日期跟抓取失敗/重複的結果，挑出指定天數的新交易日，往前找直到湊滿或候選清單用完
+   - 候選日期一樣全部平行發出（沿用階段 14 的效能教訓）
+   - 執行邏輯：讀取已存日期 → 平行抓候選交易日 → 用 `pickNewTradingDays` 挑出新的 3 天 → 逐一存入累積庫
+   - 重複執行這支 function 會自動往更早的交易日繼續補，不會補到重複的天
+
+**驗證方式**：
+- `_test-trading-day.mjs`（6 案例）：`isWeekend`／`getPastTradingDayCandidates` 純函式測試
+- `_test-backfill-pick.mjs`（6 案例）：`pickNewTradingDays` 的核心邏輯完整測試，涵蓋全新／部分已存在／抓取失敗／重複日期／空輸入等情境，**這是這次最重要的測試**，不需要網路或 Blobs 就能驗證核心邏輯對不對
+- `_test-volume-archive.mjs` 補上 `getArchivedDates` 測試（新增 2 案例）
+- `_test-integration-backfill.mjs` 重寫：老實承認因為 `backfill-history.mjs` 現在一開始就會呼叫 `getArchivedDates()` 讀 Blobs，這個測試環境沒有真實 Blobs，兩個「情境」實際上都會在同一步失敗，原本想測的「TWSE 全部失敗」路徑測不到（因為連 Blobs 都先失敗了）——調整測試誠實反映現況，只驗證「沒有 Blobs 時優雅回傳 500」，核心挑選邏輯已經由 `_test-backfill-pick.mjs` 完整覆蓋
+- `npm run test`：**110 個測試案例，全數通過**；`npm run build` 前端建置正常
+
+**已知未完成 / 待驗證**：
+- 只排除週六日，沒有排除國定假日（過年、清明連假等），刻意的簡化，已在 README 說明
+- `backfill-history.mjs` 平行抓 15 個候選日期會不會逾時，還是要實際部署後才知道（跟階段 15 同樣的限制：這個環境沒辦法量測真實 Netlify 環境下的執行時間）
+- TPEx 欄位、T86 date 參數可靠性、Blobs 真實讀寫、排程註冊、前端視覺呈現：同前面階段
+
+**產出檔案（新增/修改）**：
+```
+netlify/functions/lib/trading-day.mjs（新增）
+netlify/functions/lib/history.mjs（修改，改用共用模組、開放 fetchOneDay）
+netlify/functions/lib/volume-archive.mjs（修改，新增 getArchivedDates）
+netlify/functions/scan.mjs（修改，週末跳過寫入歷史）
+netlify/functions/backfill-history.mjs（重寫）
+netlify/functions/_test-trading-day.mjs（新增）
+netlify/functions/_test-backfill-pick.mjs（新增）
+netlify/functions/_test-volume-archive.mjs（修改）
+netlify/functions/_test-integration-backfill.mjs（重寫）
+```
+
+---
+
+## 下一階段預告（尚未開始）
+
+- 使用者重新部署，執行 DEPLOY_CHECKLIST.md，確認 `scan` 不再逾時、`backfill-history` 的跳過邏輯運作正常
+- TPEx 欄位對應、T86 date 參數可靠性、Blobs 讀寫、排程註冊、前端視覺呈現
+
 

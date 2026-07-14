@@ -1,7 +1,7 @@
 // netlify/functions/_test-volume-archive.mjs
 // 執行方式：npm run test:volume-archive
 
-import { appendDailySnapshot, getRecentVolumeHistory } from './lib/volume-archive.mjs';
+import { appendDailySnapshot, getRecentVolumeHistory, getArchivedDates } from './lib/volume-archive.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -81,6 +81,16 @@ const emptyStore = createFakeStore();
 const result6 = await getRecentVolumeHistory(3, null, emptyStore);
 assertEqual(result6.datesUsed, [], '完全沒有歷史資料時，datesUsed 應該是空陣列');
 assertEqual(result6.volumeHistory.size, 0, '完全沒有歷史資料時，volumeHistory 應該是空 map');
+
+// ---- 測試 7：getArchivedDates 應該回傳已存的日期清單（新到舊） ----
+const store7 = createFakeStore();
+await appendDailySnapshot('2026-07-06', [{ code: '1101', volume: 1000 }], store7);
+await appendDailySnapshot('2026-07-07', [{ code: '1101', volume: 2000 }], store7);
+const archivedDates7 = await getArchivedDates(store7);
+assertEqual(archivedDates7, ['2026-07-07', '2026-07-06'], 'getArchivedDates：應回傳已存日期，新到舊排序');
+
+const emptyArchivedDates = await getArchivedDates(emptyStore);
+assertEqual(emptyArchivedDates, [], 'getArchivedDates：完全沒有資料時應回傳空陣列');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

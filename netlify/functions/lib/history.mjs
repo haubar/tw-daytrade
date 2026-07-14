@@ -29,8 +29,15 @@ const HISTORY_URL_BASE = 'https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_
  * @param {Date} dateParam
  */
 export async function fetchOneDay(dateParam) {
-  const url = `${HISTORY_URL_BASE}?response=json&date=${formatDateParam(dateParam)}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  // 加上一個每次都不同的參數（cache-busting），強迫繞過可能存在的 CDN 快取。
+  // 背景：實測發現不管 date 參數送哪一天，回傳的資料永遠是同一天（最新的），
+  // 懷疑是 TWSE 前面的 CDN 快取沒有把 date 參數算進快取鍵值，導致大家都拿到同一份快取結果。
+  const cacheBuster = `${Date.now()}${Math.floor(Math.random() * 10000)}`;
+  const url = `${HISTORY_URL_BASE}?response=json&date=${formatDateParam(dateParam)}&_=${cacheBuster}`;
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(8000),
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+  });
   if (!res.ok) {
     throw new Error(`歷史資料端點回應錯誤: HTTP ${res.status}`);
   }

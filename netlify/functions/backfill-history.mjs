@@ -16,7 +16,7 @@
 // 之後如果想再往前多補幾天歷史，可以再打開一次，會自動接續往前補，不會補到重複的天。
 
 import { fetchOneDay } from './lib/history.mjs';
-import { getPastTradingDayCandidates } from './lib/trading-day.mjs';
+import { getPastTradingDayCandidates, formatDateParam } from './lib/trading-day.mjs';
 import { appendDailySnapshot, getArchivedDates } from './lib/volume-archive.mjs';
 
 const TARGET_NEW_DAYS = 3;
@@ -58,14 +58,34 @@ export default async (req) => {
     const settledResults = await Promise.allSettled(candidates.map((c) => fetchOneDay(c)));
     const fetchResults = settledResults.map((s) => (s.status === 'fulfilled' ? s.value : null));
 
+    // 診斷資訊：把每個候選日期「送出去的參數」跟「實際拿回來的日期」都列出來。
+    // 如果之後又抓不到之前的交易日，這份資訊可以直接看出問題出在哪裡，例如：
+    // - 如果每筆 actualDate 都一樣 → date 參數可能被 TWSE 端完全忽略，不管要哪天都回傳同一天
+    // - 如果大部分是 error → 可能是平行發送太多請求被擋（TWSE 對同一來源的併發限制）
+    // - 如果 actualDate 都是 null → CSV 格式可能跟預期的不一樣，parseCsv 解析不出東西
+    const debugInfo = candidates.map((c, i) => {
+      const settled = settledResults[i];
+      return {
+        candidateDateParam: formatDateParam(c),
+        actualDate: fetchResults[i]?.actualDate ?? null,
+        quoteCount: fetchResults[i]?.quotes?.length ?? 0,
+        error: settled.status === 'rejected' ? settled.reason.message : null,
+      };
+    });
+
     const newDays = pickNewTradingDays(fetchResults, archivedDates, TARGET_NEW_DAYS);
 
     if (newDays.length === 0) {
       return new Response(
-        JSON.stringify({
-          message: '沒有新的交易日可以補——可能是候選範圍內的天數都已經存在累積庫裡了，或是這次請求都抓取失敗',
-          alreadyArchivedDates: archivedDates,
-        }),
+        JSON.stringify(
+          {
+            message: '沒有新的交易日可以補——可能是候選範圍內的天數都已經存在累積庫裡了，或是這次請求都抓取失敗',
+            alreadyArchivedDates: archivedDates,
+            debugInfo,
+          },
+          null,
+          2
+        ),
         { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' } }
       );
     }
@@ -81,6 +101,7 @@ export default async (req) => {
           datesBackfilled: newDays.map((d) => d.date),
           stockCountPerDay: newDays.map((d) => ({ date: d.date, count: d.quotes.length })),
           alreadyArchivedBeforeThisRun: archivedDates,
+          debugInfo,
         },
         null,
         2

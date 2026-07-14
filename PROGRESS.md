@@ -578,4 +578,45 @@ netlify/functions/_test-integration-backfill.mjs（重寫）
 - 使用者重新部署，執行 DEPLOY_CHECKLIST.md，確認 `scan` 不再逾時、`backfill-history` 的跳過邏輯運作正常
 - TPEx 欄位對應、T86 date 參數可靠性、Blobs 讀寫、排程註冊、前端視覺呈現
 
+---
+
+## 階段 18：限制盤後時間才寫入歷史 + 幫 backfill 加診斷資訊（本階段）
+
+**目標**：使用者回報兩件事：(1) `backfill-history` 抓不到之前交易日的資料 (2) `scan` 應該限制在台灣時間下午 2 點後才更新當天資料，確保用的是準確的盤後資料。
+
+**完成事項**：
+
+1. **限制盤後時間**（明確需求，直接實作）：
+   - `lib/trading-day.mjs` 新增 `isMarketDataReady`：判斷現在是否已過台灣時間下午 2 點，用 UTC 時間換算（不依賴伺服器時區設定，Netlify Functions 環境比較保險）
+   - `scan.mjs`：寫入歷史累積庫前，除了原本的週末檢查，再加一層「是否已過台灣時間下午 2 點」的檢查，沒過就不寫入（但仍會照常抓取、計算、回傳結果給使用者看，只是不會把這次的資料當作「今天的正式收盤資料」存進歷史）。排程本身設定在台灣時間 14:10 觸發，本來就會通過這個檢查，這層防呆主要是給使用者提早手動測試的情況
+   - 測試：`_test-trading-day.mjs` 新增 5 個案例，涵蓋剛好卡在下午 2 點的邊界、跨日邊界情況
+
+2. **backfill 抓不到歷史資料**（沒有足夠資訊確定根本原因，先加診斷工具而不是亂猜著改）：
+   - 這個環境沒辦法重現真實部署後的網路行為，不能單憑症狀描述就判斷是「TWSE date 參數被完全忽略」「平行請求被擋」還是「資料格式跑掉」，貿然猜一個原因去改很可能改錯方向
+   - 改為在 `backfill-history.mjs` 的回應裡加上 `debugInfo` 欄位，列出每個候選日期「送出去的參數」跟「實際拿回來的日期／筆數／錯誤訊息」，不管是哪種原因都能從這份資料直接看出來
+   - 已經在 README／DEPLOY_CHECKLIST.md 說明三種可能的判讀方式，並請使用者下次遇到問題時把 `debugInfo` 貼回來
+
+**驗證方式**：`npm run test`，115 個測試案例，全數通過
+
+**已知未完成 / 待驗證**：
+- **backfill 抓不到歷史資料的根本原因還沒有定論**，需要使用者用新版的 `debugInfo` 重新跑一次、回報結果，才能真正對症下藥，這是下一步最優先要處理的事
+- 只排除週六日，沒有排除國定假日
+- TPEx 欄位、T86 date 參數可靠性、Blobs 真實讀寫、排程註冊、前端視覺呈現：同前面階段
+
+**產出檔案（修改）**：
+```
+netlify/functions/lib/trading-day.mjs
+netlify/functions/scan.mjs
+netlify/functions/backfill-history.mjs
+netlify/functions/_test-trading-day.mjs
+```
+
+---
+
+## 下一階段預告（尚未開始）
+
+- **等待使用者提供 `backfill-history` 的 `debugInfo` 回應內容，診斷抓不到歷史資料的根本原因**
+- 使用者重新部署，確認 `scan` 在下午 2 點前後的行為符合預期
+- TPEx 欄位對應、Blobs 讀寫、排程註冊、前端視覺呈現
+
 

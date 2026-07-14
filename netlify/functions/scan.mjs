@@ -14,7 +14,7 @@ import { getRecentVolumeHistory, appendDailySnapshot } from './lib/volume-archiv
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
 import { screenWatchlists } from './lib/screen.mjs';
 import { saveLatestScan } from './lib/storage.mjs';
-import { isWeekend } from './lib/trading-day.mjs';
+import { isWeekend, isMarketDataReady } from './lib/trading-day.mjs';
 
 const TWSE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
 const TPEX_URL = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes';
@@ -73,6 +73,12 @@ export default async (req) => {
     let archiveWarning = null;
     if (isWeekend(new Date())) {
       archiveWarning = '今天是非交易日（週末），不寫入歷史累積庫，避免產生無效的交易日資料';
+    } else if (!isMarketDataReady(new Date())) {
+      // 台股 13:30 收盤，太早查詢可能拿到還沒最終確認的盤後資料，先不寫進歷史累積庫，
+      // 避免把不準確的資料當成「今天的正式收盤資料」存下來，之後拿來算量能異常因子會失真。
+      // 排程本身是設定在台灣時間 14:10 觸發（見檔頭排程設定），本來就會過這個檢查，
+      // 這裡主要是防呆使用者在下午 2 點前手動觸發測試的情況。
+      archiveWarning = '現在還沒到台灣時間下午 2 點，盤後資料可能還沒確定下來，先不寫入歷史累積庫（可以晚一點再手動觸發一次，或等排程在 14:10 自動執行）';
     } else {
       try {
         await appendDailySnapshot(todayDateStr, todayQuotes);

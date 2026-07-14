@@ -20,6 +20,25 @@ export function isWeekend(date) {
   return day === 0 || day === 6;
 }
 
+const TAIWAN_UTC_OFFSET_HOURS = 8;
+const MARKET_DATA_READY_HOUR = 14; // 台灣時間幾點後，盤後資料才算大致穩定可用
+
+/**
+ * 判斷現在是不是已經過了台灣時間下午 2 點——台股 13:30 收盤，盤後資料通常要再等一段時間
+ * 才會確定下來，太早查詢可能拿到還沒最終確認的資料。用 UTC 時間換算，不依賴伺服器本身的
+ * 時區設定（Netlify Functions 執行環境預設是 UTC，用 getUTCHours() 換算比較保險，
+ * 不會因為部署環境的時區設定不同而算錯）。
+ *
+ * 這裡只判斷「現在幾點」，不判斷「今天是不是交易日」，兩者是分開的兩個檢查（見 isWeekend）。
+ *
+ * @param {Date} [date] 預設現在
+ * @returns {boolean}
+ */
+export function isMarketDataReady(date = new Date()) {
+  const taiwanHour = (date.getUTCHours() + TAIWAN_UTC_OFFSET_HOURS) % 24;
+  return taiwanHour >= MARKET_DATA_READY_HOUR;
+}
+
 /**
  * 把日期物件轉成 YYYYMMDD 字串（給 TWSE API 的 date 參數用）
  */

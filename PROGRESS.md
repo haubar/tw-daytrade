@@ -619,4 +619,36 @@ netlify/functions/_test-trading-day.mjs
 - 使用者重新部署，確認 `scan` 在下午 2 點前後的行為符合預期
 - TPEx 欄位對應、Blobs 讀寫、排程註冊、前端視覺呈現
 
+---
+
+## 階段 19：找到 backfill 逾時的真正原因——TWSE 併發限制（本階段）
+
+**目標**：使用者回報 `backfill-history` 的 `debugInfo` 顯示所有請求的 `error` 都是 `The operation was aborted due to timeout`，並直接指出解法：一次只發 3 個請求。
+
+**根因確認**：階段 18 加的 `debugInfo` 診斷工具發揮作用了——這次不用再猜，錯誤訊息直接證實是階段 18 列出的三種可能原因之一：「大部分 `error` 有值 → 平行發送太多請求被 TWSE 擋掉（併發限制）」。原本 `backfill-history.mjs` 一次平行發 15 個請求，全部卡在 `AbortSignal.timeout(8000)` 逾時。
+
+**完成事項**：
+1. `backfill-history.mjs` 重構：
+   - 新增 `chunk` 輔助函式，把候選交易日切成每批 3 個（`BATCH_SIZE = 3`）
+   - 改成分批處理：一批一批發送（批次內平行、批次之間循序），每批處理完就檢查是否已經湊滿 3 天新資料，湊滿就提早停止、不發後續批次，兼顧成功率跟速度
+   - `pickNewTradingDays` 這個核心挑選邏輯完全沒動（純函式，介面沒變），只是呼叫方式從「一次餵全部候選結果」改成「每批餵一次，用累積的 `seenDates` 跨批次追蹤已經挑到的日期，避免不同批次挑到重複的天」
+2. 測試：`chunk` 函式補上 4 個獨立測試案例；`pickNewTradingDays` 的既有 6 個測試不用改（介面沒變，全過確認沒有回歸）
+
+**驗證方式**：`npm run test`，119 個測試案例，全數通過
+
+**這次測試沒辦法完整覆蓋的部分**：`getArchivedDates()` 在這個環境一定會因為沒有真實 Blobs 而失敗，導致沒辦法用完整的 handler 整合測試驗證「分批 + 提早停止」這個新的排程邏輯在真實情況下的行為（例如：第一批 3 個裡有幾個已經是舊資料時，會不會正確接著發第二批）。這個邏輯的正確性目前只能靠程式碼邏輯檢視跟 `chunk`／`pickNewTradingDays` 個別驗證過的純函式組合起來推論，實際行為要部署後再觀察一次 `debugInfo` 確認
+
+**產出檔案（修改）**：
+```
+netlify/functions/backfill-history.mjs
+netlify/functions/_test-backfill-pick.mjs
+```
+
+---
+
+## 下一階段預告（尚未開始）
+
+- 使用者重新部署，重新測試 `backfill-history`，確認分批之後不再逾時、確實能補到之前的交易日資料
+- TPEx 欄位對應、Blobs 讀寫、排程註冊、前端視覺呈現
+
 

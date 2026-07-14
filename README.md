@@ -80,12 +80,12 @@ tw-daytrade-scanner/
 - 以上判斷邏輯都來自同一個共用模組 `lib/trading-day.mjs`，避免各處各自寫一份容易長出不一致的行為
 - 目前只排除週六日，**沒有**排除國定假日（例如過年、清明連假），這是刻意的簡化——完整的台股交易日曆需要額外維護一份假日清單，遇到連假頂多是候選範圍要多找幾輪，不會產生錯誤結果（因為最終還是會用「回傳資料本身的日期」驗證）
 
-**如果 backfill-history 抓不到之前交易日的資料**：這支 function 的回應現在會附上 `debugInfo` 欄位，列出每個候選日期「送出去的參數」跟「實際拿回來的日期」，方便判斷問題出在哪：
+**如果 backfill-history 抓不到之前交易日的資料**：這支 function 的回應會附上 `debugInfo` 欄位，列出每個候選日期「送出去的參數」跟「實際拿回來的日期」，方便判斷問題出在哪：
 - 如果每筆 `actualDate` 都一樣 → TWSE 的 `date` 參數可能被完全忽略，不管要哪天都回傳同一天
-- 如果大部分 `error` 有值 → 可能是平行發送太多請求被 TWSE 擋掉（併發限制）
+- 如果大部分 `error` 顯示 `The operation was aborted due to timeout` → TWSE 對同一來源的併發請求數有限制，**這是實測發現的真實原因**：一次平行發 15 個請求全部逾時，改成一批只發 3 個（`BATCH_SIZE`）之後解決
 - 如果 `actualDate` 都是 `null` → 回傳的資料格式可能跟預期不一樣，CSV 解析不出東西
 
-遇到這個狀況，把 `debugInfo` 的內容貼給開發者診斷。
+遇到還是抓不到資料的狀況，把 `debugInfo` 的內容貼給開發者診斷。
 
 ## 關於「隔日沖分點因子」的重要說明
 
@@ -121,7 +121,7 @@ npm run dev
 
 ```bash
 npm install
-npm run test                # 跑全部測試（115 個案例，見 TEST_REPORT.md）
+npm run test                # 跑全部測試（119 個案例，見 TEST_REPORT.md）
 npm run test:fetch          # 資料正規化（JSON 格式）
 npm run test:csv            # CSV 解析器
 npm run test:normalize-csv  # 資料正規化（CSV 格式）

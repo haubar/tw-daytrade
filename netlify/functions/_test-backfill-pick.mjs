@@ -1,7 +1,7 @@
 // netlify/functions/_test-backfill-pick.mjs
 // 執行方式：npm run test:backfill-pick
 
-import { pickNewTradingDays } from './backfill-history.mjs';
+import { pickNewTradingDays, chunk } from './backfill-history.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -72,6 +72,12 @@ assertEqual(
 // ---- 案例 5：目標天數是 0 或候選清單是空的，應該回傳空陣列，不出錯 ----
 assertEqual(pickNewTradingDays(allNew, [], 0), [], '目標天數為 0 時應回傳空陣列');
 assertEqual(pickNewTradingDays([], [], 3), [], '候選清單是空的時應回傳空陣列，不拋出例外');
+
+// ---- chunk：分批工具函式（用來把候選日期切成每批 3 個，避免一次發太多請求被 TWSE 擋掉） ----
+assertEqual(chunk([1, 2, 3, 4, 5, 6, 7], 3), [[1, 2, 3], [4, 5, 6], [7]], 'chunk：7 個項目切成每批 3 個，應該是 [3,3,1]');
+assertEqual(chunk([1, 2, 3], 3), [[1, 2, 3]], 'chunk：項目數剛好等於批次大小，應該只有一批');
+assertEqual(chunk([], 3), [], 'chunk：空陣列應該回傳空陣列');
+assertEqual(chunk([1], 3), [[1]], 'chunk：項目數小於批次大小，應該只有一批、包含全部項目');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

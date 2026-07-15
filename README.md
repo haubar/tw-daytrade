@@ -49,7 +49,7 @@ tw-daytrade-scanner/
     ├── _test-*.mjs                         # 本地測試腳本（不連網路，用樣本/假資料驗證邏輯）
     └── lib/
         ├── normalize.mjs                   # 資料正規化：把不同來源／格式轉成統一格式
-        ├── csv.mjs                         # 輕量 CSV 解析器（history.mjs 用）
+        ├── csv.mjs                         # 輕量 CSV 解析器（目前沒有模組在用，見下方說明；保留是因為獨立測試過，之後接其他 CSV 格式的資料源可以直接重用）
         ├── trading-day.mjs                  # 共用交易日邏輯：判斷週末、產生候選交易日清單
         ├── history.mjs                     # 現場抓取多天歷史資料（僅 backfill-history.mjs 使用）
         ├── volume-archive.mjs               # 歷史成交量的 Blobs 累積儲存層（scan.mjs 實際使用的歷史資料來源）
@@ -81,11 +81,19 @@ tw-daytrade-scanner/
 - 目前只排除週六日，**沒有**排除國定假日（例如過年、清明連假），這是刻意的簡化——完整的台股交易日曆需要額外維護一份假日清單，遇到連假頂多是候選範圍要多找幾輪，不會產生錯誤結果（因為最終還是會用「回傳資料本身的日期」驗證）
 
 **如果 backfill-history 抓不到之前交易日的資料**：這支 function 的回應會附上 `debugInfo` 欄位，列出每個候選日期「送出去的參數」跟「實際拿回來的日期」，方便判斷問題出在哪：
-- 如果每筆 `actualDate` 都一樣 → TWSE 的 `date` 參數可能被完全忽略，不管要哪天都回傳同一天
-- 如果大部分 `error` 顯示 `The operation was aborted due to timeout` → TWSE 對同一來源的併發請求數有限制，**這是實測發現的真實原因**：一次平行發 15 個請求全部逾時，改成一批只發 3 個（`BATCH_SIZE`）之後解決
-- 如果 `actualDate` 都是 `null` → 回傳的資料格式可能跟預期不一樣，CSV 解析不出東西
+- 如果每筆 `actualDate` 都一樣 → 曾經實測發生過：原本用的 `www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?date=...` 端點不管 `date` 參數送哪一天，回傳的都是同一天資料，研判是 CDN 快取沒有把 `date` 算進快取鍵值。**已經改用 `MI_INDEX` 端點解決**（見下方說明），如果又遇到這個症狀，可能是 `MI_INDEX` 端點本身也開始出現同樣的問題，需要再進一步排查
+- 如果大部分 `error` 顯示 `The operation was aborted due to timeout` → TWSE 對同一來源的併發請求數有限制，已經改成分批發送（每批 3 個，`BATCH_SIZE`）解決
+- 如果 `actualDate` 都是 `null` → 回傳的資料格式可能跟預期不一樣，`MI_INDEX` 的回應結構解析不出東西（見 `parseMiIndexResponse` 的容錯設計）
 
 遇到還是抓不到資料的狀況，把 `debugInfo` 的內容貼給開發者診斷。
+
+**歷史資料端點的最終選擇（`history.mjs`，只給 `backfill-history.mjs` 使用）**：
+```
+https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=YYYYMMDD&type=ALLBUT0999NOTIND&response=json
+```
+這是走過彎路才確定下來的：一開始用 `STOCK_DAY_ALL` 端點，`date` 參數實測完全無效（不管送哪天都回傳同一天資料）；改用 `MI_INDEX` 端點後，`date` 參數確認有效（回傳資料的標題會標明實際對應的日期，跟送出去的參數吻合）。這個端點回應結構跟 `STOCK_DAY_ALL` 不一樣：不是單純的 CSV，是 JSON 包多個表格（`tables` 陣列），要找 `fields` 裡有「證券代號」的那個表格才是真正的資料；「漲跌」的正負號也是獨立欄位（用顏色 HTML 表示紅漲綠跌），跟漲跌幅度數字是分開的兩個欄位，需要合併判讀。
+
+**scan.mjs 抓「今天」資料用的是完全不同的端點**（`https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`，見上方「資料來源」章節），這個 openapi 子網域的端點只回傳最新資料，沒有 `date` 參數，不受這次的問題影響，不用跟著改。
 
 ## 關於「隔日沖分點因子」的重要說明
 
@@ -121,7 +129,7 @@ npm run dev
 
 ```bash
 npm install
-npm run test                # 跑全部測試（119 個案例，見 TEST_REPORT.md）
+npm run test                # 跑全部測試（125 個案例，見 TEST_REPORT.md）
 npm run test:fetch          # 資料正規化（JSON 格式）
 npm run test:csv            # CSV 解析器
 npm run test:normalize-csv  # 資料正規化（CSV 格式）

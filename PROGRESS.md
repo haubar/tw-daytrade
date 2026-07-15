@@ -683,4 +683,42 @@ netlify/functions/lib/history.mjs
 - 如果還是一樣的症狀，執行 Plan B：放棄透過這個端點做歷史回填，改成完全依賴 `scan.mjs` 自然累積
 - TPEx 欄位對應、Blobs 讀寫、排程註冊、前端視覺呈現
 
+---
+
+## 階段 21：找到正確的歷史資料端點——MI_INDEX 取代 STOCK_DAY_ALL（本階段）
+
+**目標**：階段 20 的快取破解沒有機會驗證是否有效——使用者直接提供了確認可行的正確端點，跳過了「Plan B 放棄回填」的分支。
+
+**使用者提供的關鍵資訊**：`https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20260708&type=ALLBUT0999NOTIND&response=json` 這個端點，`date` 參數是真的有效的。用真實請求驗證確認：回傳資料的標題「115年07月08日 每日收盤行情」跟送出去的 `date=20260708` 完全吻合。原本用的 `STOCK_DAY_ALL` 端點才是問題所在——回頭看，先前的「CDN 快取」推測方向是對的（`MI_INDEX` 沒有這個問題），但具體是哪個端點有問題，最終是靠使用者提供的資訊才確定，不是靠我這邊的推測解決的。
+
+**完成事項**：
+1. `history.mjs` 整個重寫，改用 `MI_INDEX` 端點，並處理跟原本 `STOCK_DAY_ALL`／CSV 格式完全不同的回應結構：
+   - `MI_INDEX` 回傳 JSON，但結構是 `{ tables: [...] }` 陣列，裡面好幾個表格是空的（其他報表類型用的），真正的資料要用 `fields` 裡有沒有「證券代號」動態找出來，不能寫死陣列位置
+   - 「漲跌」的正負號是獨立欄位（一段帶顏色的 HTML，`color:green` 是跌、`color:red` 是漲，符合台股慣例），跟漲跌幅度數字（永遠是正數）是分開的兩個欄位，需要合併判讀才能還原出正確帶符號的漲跌值
+   - 新增 `parseMiIndexResponse` 純函式處理上述解析邏輯，拆出來方便用固定樣本測試，不用每次都連網路
+   - 日期驗證邏輯重用 `institutional.mjs` 的 `extractReportDate`（跟 T86 端點是同一種民國年日期字串格式，避免重複寫一份解析邏輯）
+   - `normalize.mjs` 的 `toNumber` 開放匯出，供 `history.mjs` 共用
+2. `_test-history.mjs` 大幅重寫：舊的 CSV 格式假資料全部改成 `MI_INDEX` 的 JSON 格式，新增 `parseMiIndexResponse` 的獨立測試（含正常解析、漲跌正負號、找不到表格、JSON 格式錯誤等邊界情況），共新增 6 個案例
+
+**驗證方式**：`npm run test`，**125 個測試案例，全數通過**；`npm run build` 前端建置正常
+
+**已知未完成 / 待驗證**：
+- **這是這次除錯過程中第一次有具體證據支持的修正**（前面兩次的快取破解、分批發送都是合理推測但沒有直接證據），但仍然沒辦法在這個環境實際驗證部署後真的能抓到不同天的資料，需要使用者重新部署、重新跑一次 `backfill-history` 確認
+- `csv.mjs`／`normalize.mjs` 的 CSV 相關函式（`normalizeTwseCsvRow`／`extractDateFromCsvRow`）現在沒有任何模組在使用，但保留下來（有獨立測試，之後如果接到其他 CSV 格式的資料源可以直接重用）
+- TPEx 欄位對應、Blobs 讀寫、排程註冊、前端視覺呈現：同前面階段
+
+**產出檔案（修改）**：
+```
+netlify/functions/lib/history.mjs（重寫）
+netlify/functions/lib/normalize.mjs（修改，toNumber 開放匯出）
+netlify/functions/_test-history.mjs（重寫）
+```
+
+---
+
+## 下一階段預告（尚未開始）
+
+- **使用者重新部署，重新測試 `backfill-history`，確認 `MI_INDEX` 端點在真實環境下真的能抓到不同天的資料**
+- TPEx 欄位對應、Blobs 讀寫、排程註冊、前端視覺呈現
+
 

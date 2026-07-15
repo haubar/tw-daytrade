@@ -19,7 +19,7 @@
 /**
  * 安全轉換字串為數字，處理逗號千分位、空字串、"--" 等髒資料
  */
-function toNumber(val) {
+export function toNumber(val) {
   if (val === null || val === undefined) return 0;
   const cleaned = String(val).replace(/,/g, '').trim();
   if (cleaned === '' || cleaned === '--') return 0;

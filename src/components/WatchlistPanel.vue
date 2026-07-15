@@ -9,6 +9,7 @@
 import ScoreBar from './ScoreBar.vue';
 import Badge from './base/Badge.vue';
 import { formatPercent, formatPrice, formatVolume } from '../utils/format.js';
+import { getPriceBand } from '../utils/filterWatchlist.js';
 
 defineProps({
   title: { type: String, required: true },
@@ -53,6 +54,9 @@ defineProps({
             {{ formatPercent(item.changePercent) }}
           </span>
           <span class="text-[0.7rem] text-mute">{{ formatVolume(item.volume) }}</span>
+          <span v-if="getPriceBand(item.close)" class="mt-0.5 text-[0.65rem] text-gold">
+            參考略過 {{ getPriceBand(item.close).skipCount }} 檔
+          </span>
         </span>
 
         <ScoreBar

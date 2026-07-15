@@ -5,10 +5,9 @@
 // 「今天/某一天是不是交易日」，避免兩邊各自寫一份邏輯，容易長出不一致的行為
 // （例如一邊用 getDay()、一邊用別的方式判斷週末，結果邊界情況對不起來）。
 //
-// 注意：這裡只排除週六日，沒有排除國定假日（例如過年、清明連假），
-// 這是刻意的簡化——完整的台股交易日曆需要額外維護一份假日清單，
-// 目前先用「跳過週末」處理最大宗的情況，遇到連假頂多是候選清單多跑幾輪、
-// 不會產生錯誤結果（因為最終還是會用「回傳資料本身的日期」驗證，見 fetchOneDay）。
+// 注意：現在除了週六日，也會排除已知的台股休市日（以 2026 年官方行事曆為準）。
+// 這不是完整的國定假日引擎，而是一份可維護的交換所休市清單；如果未來年度有調整，
+// 只要更新下方的日期表即可，不需要動到候選日期產生邏輯。
 
 /**
  * 判斷某個日期是不是週六或週日
@@ -18,6 +17,47 @@
 export function isWeekend(date) {
   const day = date.getDay(); // 0 = 週日, 6 = 週六
   return day === 0 || day === 6;
+}
+
+function formatIsoDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// 以 TWSE 官方公告的 2026 年交易日曆為基準，先把已知休市日列出。
+// 這份清單可以在每年年初更新，讓 getPastTradingDayCandidates 自動跳過非交易日。
+const EXCHANGE_HOLIDAYS_BY_YEAR = {
+  2026: new Set([
+    '2026-01-01',
+    '2026-02-16',
+    '2026-02-17',
+    '2026-02-18',
+    '2026-02-19',
+    '2026-02-20',
+    '2026-02-27',
+    '2026-04-03',
+    '2026-04-04',
+    '2026-04-05',
+    '2026-05-01',
+    '2026-06-19',
+    '2026-09-25',
+    '2026-10-09',
+    '2026-10-26',
+    '2026-12-25',
+  ]),
+};
+
+/**
+ * 判斷某個日期是不是台股休市日（週末以外，含已知國定/補假休市）。
+ * @param {Date} date
+ * @returns {boolean}
+ */
+export function isExchangeHoliday(date) {
+  const holidaySet = EXCHANGE_HOLIDAYS_BY_YEAR[date.getFullYear()];
+  if (!holidaySet) return false;
+  return holidaySet.has(formatIsoDate(date));
 }
 
 const TAIWAN_UTC_OFFSET_HOURS = 8;
@@ -64,7 +104,7 @@ export function getPastTradingDayCandidates(referenceDate, count) {
   cursor.setDate(cursor.getDate() - 1); // 從「前一天」開始往回推
 
   while (candidates.length < count) {
-    if (!isWeekend(cursor)) {
+    if (!isWeekend(cursor) && !isExchangeHoliday(cursor)) {
       candidates.push(new Date(cursor));
     }
     cursor.setDate(cursor.getDate() - 1);

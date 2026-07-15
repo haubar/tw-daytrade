@@ -9,23 +9,24 @@
 
 export const HIGH_PRICE_STOCK_LIMIT = 1000;
 
-// 使用者提供的價格帶，以及每個價格帶建議先略過的檔數。
+// 使用者提供的價格帶，以及各帶達到參考獲利所需上跳的報價檔數。
 export const PRICE_BANDS = [
-  { min: 370, max: 500, skipCount: 3 },
-  { min: 184, max: 370, skipCount: 2 },
-  { min: 100, max: 184, skipCount: 1 },
-  { min: 75, max: 100, skipCount: 3 },
-  { min: 50, max: 74, skipCount: 2 },
-  { min: 38, max: 50, skipCount: 3 },
-  { min: 18, max: 37, skipCount: 2 },
-  { min: 11, max: 18, skipCount: 1 },
-  { min: 3.7, max: 10, skipCount: 2 },
-  { min: 0, max: 3.6, skipCount: 1 },
+  { min: 500, max: 999, profitTicks: null },
+  { min: 370, max: 500, profitTicks: 3 },
+  { min: 184, max: 370, profitTicks: 2 },
+  { min: 100, max: 184, profitTicks: 1 },
+  { min: 75, max: 100, profitTicks: 3 },
+  { min: 50, max: 74, profitTicks: 2 },
+  { min: 38, max: 50, profitTicks: 3 },
+  { min: 18, max: 37, profitTicks: 2 },
+  { min: 11, max: 18, profitTicks: 1 },
+  { min: 3.7, max: 10, profitTicks: 2 },
+  { min: 0, max: 3.6, profitTicks: 1 },
 ];
 
 /**
- * 取得股價所屬的操作參考價格帶。500 元以上、未達千元的股票不套用
- * 使用者提供的略過檔數；千元股由 filterWatchlist 固定排除。
+ * 取得股價所屬的操作參考價格帶。500 元以上另提供篩選選項，但因未指定
+ * 獲利跳檔數，不顯示獲利價差提示；千元股由 filterWatchlist 固定排除。
  */
 export function getPriceBand(price) {
   if (!Number.isFinite(price) || price < 0 || price >= HIGH_PRICE_STOCK_LIMIT) return null;
@@ -36,6 +37,25 @@ export function getPriceBand(price) {
 // 起點視為本帶的實際上界，讓這類股票不會意外落在任何一帶之外。
 export function getPriceBandUpperBound(index) {
   return index === 0 ? PRICE_BANDS[0].max : PRICE_BANDS[index - 1].min;
+}
+
+/** 台股普通股票的報價檔距（ETF、權證等商品的規則可能不同）。 */
+export function getStockTickSize(price) {
+  if (price < 10) return 0.01;
+  if (price < 50) return 0.05;
+  if (price < 100) return 0.1;
+  if (price < 500) return 0.5;
+  return 1;
+}
+
+/** 往上跳指定檔數後的價差；跨過價格級距時會套用下一檔的正確檔距。 */
+export function getPriceMoveForTicks(price, ticks) {
+  if (!Number.isFinite(price) || !Number.isInteger(ticks) || ticks < 0) return null;
+  let target = price;
+  for (let i = 0; i < ticks; i += 1) {
+    target = Math.round((target + getStockTickSize(target)) * 100) / 100;
+  }
+  return Math.round((target - price) * 100) / 100;
 }
 
 /**

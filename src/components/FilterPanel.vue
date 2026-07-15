@@ -52,6 +52,15 @@ function applyPriceBand(band, index) {
   filters.value.maxPrice = getPriceBandUpperBound(index);
 }
 
+function priceRangeStyle() {
+  const min = filters.value.minPrice ?? 0;
+  const max = filters.value.maxPrice ?? PRICE_SLIDER_MAX;
+  return {
+    '--range-start': `${(min / PRICE_SLIDER_MAX) * 100}%`,
+    '--range-width': `${((max - min) / PRICE_SLIDER_MAX) * 100}%`,
+  };
+}
+
 function resetFilters() {
   // 不直接替換 defineModel 指向的物件，避免父層傳入 reactive 物件時失去連結，
   // 這也是原本「清除篩選」看似沒有作用的原因。
@@ -80,7 +89,8 @@ function resetFilters() {
             {{ displayPrice(filters.minPrice, '最低不限') }} — {{ displayPrice(filters.maxPrice, '最高 999 元') }}
           </span>
         </div>
-        <div class="range-stack" aria-label="股價範圍">
+        <div class="range-stack" :style="priceRangeStyle()" aria-label="股價範圍">
+          <span class="range-selected" aria-hidden="true"></span>
           <input :value="filters.minPrice ?? 0" type="range" min="0" :max="PRICE_SLIDER_MAX" step="0.1" aria-label="最低股價" @input="setMinPrice" />
           <input :value="filters.maxPrice ?? PRICE_SLIDER_MAX" type="range" min="0" :max="PRICE_SLIDER_MAX" step="0.1" aria-label="最高股價" @input="setMaxPrice" />
         </div>
@@ -92,7 +102,8 @@ function resetFilters() {
             class="rounded-sm border border-hairline px-1.5 py-1 font-mono text-[0.68rem] text-mute hover:border-gold hover:text-paper"
             @click="applyPriceBand(band, index)"
           >
-            {{ band.min === 0 ? '3.6 以下' : `${band.min}–${band.max}` }} · 略過 {{ band.skipCount }} 檔
+            {{ band.min === 0 ? '3.6 以下' : band.min === 500 ? '500 以上' : `${band.min}–${band.max}` }}
+            <template v-if="band.profitTicks != null"> · 獲利參考 {{ band.profitTicks }} 檔</template>
           </button>
         </div>
       </div>
@@ -113,7 +124,7 @@ function resetFilters() {
     </div>
 
     <p class="m-0 mt-2 text-[0.72rem] text-mute">
-      千元以上股票固定排除。漲跌幅度會取絕對值：多方看漲幅、空方看跌幅是否超過門檻；「略過」為各價格帶的操作參考，不會改變排行榜分數。
+      金色軌道只表示目前選取的股價區間。千元以上股票固定排除；「獲利參考 N 檔」表示該價位需上跳 N 個報價檔，並不會改變排行榜分數。
     </p>
   </section>
 </template>
@@ -121,7 +132,12 @@ function resetFilters() {
 <style scoped>
 input[type='range'] { accent-color: var(--color-gold); cursor: pointer; width: 100%; }
 .range-stack { height: 1.4rem; position: relative; }
-.range-stack input { left: 0; margin: 0; pointer-events: none; position: absolute; top: 0; }
-.range-stack input::-webkit-slider-thumb { pointer-events: auto; }
-.range-stack input::-moz-range-thumb { pointer-events: auto; }
+.range-stack::before, .range-selected { border-radius: 999px; height: 0.25rem; left: 0; position: absolute; top: 0.55rem; }
+.range-stack::before { background: var(--color-hairline); content: ''; right: 0; }
+.range-selected { background: var(--color-gold); left: var(--range-start); width: var(--range-width); }
+.range-stack input { appearance: none; background: transparent; left: 0; margin: 0; pointer-events: none; position: absolute; top: 0; z-index: 1; }
+.range-stack input::-webkit-slider-runnable-track { background: transparent; }
+.range-stack input::-webkit-slider-thumb { appearance: none; background: var(--color-gold); border: 2px solid var(--color-ink); border-radius: 999px; height: 1rem; margin-top: -0.38rem; pointer-events: auto; width: 1rem; }
+.range-stack input::-moz-range-track { background: transparent; }
+.range-stack input::-moz-range-thumb { background: var(--color-gold); border: 2px solid var(--color-ink); border-radius: 999px; height: 0.75rem; pointer-events: auto; width: 0.75rem; }
 </style>

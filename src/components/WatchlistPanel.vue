@@ -9,7 +9,7 @@
 import ScoreBar from './ScoreBar.vue';
 import Badge from './base/Badge.vue';
 import { formatPercent, formatPrice, formatVolume } from '../utils/format.js';
-import { getPriceBand } from '../utils/filterWatchlist.js';
+import { getPriceBand, getPriceMoveForTicks } from '../utils/filterWatchlist.js';
 
 defineProps({
   title: { type: String, required: true },
@@ -17,6 +17,13 @@ defineProps({
   tone: { type: String, required: true, validator: (v) => v === 'surge' || v === 'ebb' },
   emptyMessage: { type: String, default: '目前沒有符合條件的股票。' },
 });
+
+function profitReference(price) {
+  const band = getPriceBand(price);
+  if (!band || band.profitTicks == null) return null;
+  const move = getPriceMoveForTicks(price, band.profitTicks);
+  return `獲利參考 +${formatPrice(move)} 元（${band.profitTicks} 檔）`;
+}
 </script>
 
 <template>
@@ -54,8 +61,8 @@ defineProps({
             {{ formatPercent(item.changePercent) }}
           </span>
           <span class="text-[0.7rem] text-mute">{{ formatVolume(item.volume) }}</span>
-          <span v-if="getPriceBand(item.close)" class="mt-0.5 text-[0.65rem] text-gold">
-            參考略過 {{ getPriceBand(item.close).skipCount }} 檔
+          <span v-if="profitReference(item.close)" class="mt-0.5 text-[0.65rem] text-gold">
+            {{ profitReference(item.close) }}
           </span>
         </span>
 

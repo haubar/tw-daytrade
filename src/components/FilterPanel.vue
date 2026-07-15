@@ -96,7 +96,7 @@ function resetFilters() {
         </div>
         <div class="mt-3 flex flex-wrap gap-1.5">
           <button
-            v-for="band in PRICE_BANDS"
+            v-for="(band, index) in PRICE_BANDS"
             :key="`${band.min}-${band.max}`"
             type="button"
             class="rounded-sm border border-hairline px-1.5 py-1 font-mono text-[0.68rem] text-mute hover:border-gold hover:text-paper"

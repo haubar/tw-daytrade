@@ -12,6 +12,12 @@ export function formatPrice(value) {
   return value.toFixed(value >= 1000 ? 0 : 2);
 }
 
+export function formatVolume(shares) {
+  // 台股慣例用「張」（1張 = 1,000股）表示成交量，比原始股數直覺
+  const lots = Math.round(shares / 1000);
+  return `${lots.toLocaleString('zh-TW')} 張`;
+}
+
 export function formatDateTime(iso) {
   const d = new Date(iso);
   return d.toLocaleString('zh-TW', {

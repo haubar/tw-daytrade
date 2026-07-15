@@ -8,7 +8,7 @@
 //   （grid-template-columns 的精確欄寬設定，Tailwind 沒有內建剛好符合的預設值，用 arbitrary value 表達）
 import ScoreBar from './ScoreBar.vue';
 import Badge from './base/Badge.vue';
-import { formatPercent, formatPrice } from '../utils/format.js';
+import { formatPercent, formatPrice, formatVolume } from '../utils/format.js';
 
 defineProps({
   title: { type: String, required: true },
@@ -52,6 +52,7 @@ defineProps({
           >
             {{ formatPercent(item.changePercent) }}
           </span>
+          <span class="text-[0.7rem] text-mute">{{ formatVolume(item.volume) }}</span>
         </span>
 
         <ScoreBar

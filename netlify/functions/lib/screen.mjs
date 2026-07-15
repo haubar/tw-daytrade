@@ -30,6 +30,7 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
     market: quote.market,
     close: quote.close,
     changePercent,
+    volume: quote.volume, // 原始成交股數，給前端做「成交量過濾」用（跟 volumeRatio 不同，volumeRatio 是倍數不是絕對量）
     volumeRatio: computeVolumeRatio(quote.volume, pastVolumes),
     gapPercent: computeGapPercent(quote.open, prevClose),
     relativeStrength: computeRelativeStrength(changePercent, marketChangePercent),
@@ -45,12 +46,12 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
  * @param {Map<string, number[]>} volumeHistory 過去 N 日成交量歷史（history.mjs 的輸出）
  * @param {Map<string, number>} [institutionalNetBuy] 三大法人買賣超股數（institutional.mjs 的輸出），可省略（視為全部無資料）
  * @param {Object} [options]
- * @param {number} [options.topN=30] 多方／空方各取幾檔
+ * @param {number} [options.topN=100] 多方／空方各取幾檔（拉大到 100 是為了讓前端篩選功能有足夠的候選池可以篩，不然 Top 30 篩一篩可能剩沒幾檔）
  * @param {Object} [options.weights] 因子權重，傳給 computeCompositeScores
  * @returns {{marketChangePercent: number, longWatchlist: Array, shortWatchlist: Array, totalCandidates: number, excludedNoHistory: number}}
  */
 export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy = new Map(), options = {}) {
-  const { topN = 30, weights } = options;
+  const { topN = 100, weights } = options;
 
   const marketChangePercent = computeMarketChangeProxy(todayQuotes);
 

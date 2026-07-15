@@ -110,7 +110,9 @@ export default async (req) => {
       institutionalWarning = `法人買賣超資料抓取失敗（本次結果的法人因子將全部視為中性）: ${institutionalResult.reason.message}`;
     }
 
-    const result = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, { topN: 30 });
+    // topN 拉到 100（原本 30）：前端要做成交量/股價/漲幅篩選，如果候選池只有 30 檔，
+    // 篩一篩很容易剩沒幾檔可看，拉大候選池篩選才有意義。
+    const result = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, { topN: 100 });
 
     const payload = {
       generatedAt: new Date().toISOString(),

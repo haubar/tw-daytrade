@@ -721,4 +721,36 @@ netlify/functions/_test-history.mjs（重寫）
 - **使用者重新部署，重新測試 `backfill-history`，確認 `MI_INDEX` 端點在真實環境下真的能抓到不同天的資料**
 - TPEx 欄位對應、Blobs 讀寫、排程註冊、前端視覺呈現
 
+---
+
+## 階段 22：確認 backfill 已部署可用 + 新增新手教學文件（本階段）
+
+**目標**：使用者確認 `backfill-history` 換成 `MI_INDEX` 端點後可以成功抓到資料。過程中釐清一個容易混淆的地方，並補上給終端使用者（當沖交易者，不是開發者）看的教學文件。
+
+**釐清事項**：使用者檢查 Netlify Blobs 後台的 `scan-results` store 的 `by-date` 沒看到 backfill 補的日期，一度以為沒有真的寫入。實際上專案有兩個獨立的 Blobs store：`scan-results`（`scan.mjs` 寫，存完整掃描結果，key 是 `by-date/YYYY-MM-DD`）跟 `volume-archive`（`scan.mjs` 自動累積＋`backfill-history.mjs` 手動補都寫這裡，只存原始成交量快照，key 是 `snapshot:YYYY-MM-DD`）。backfill 補的資料在後者，不是前者，找對 store 後確認資料確實有寫入。
+
+**完成事項**：
+新增 [`USER_GUIDE.md`](./USER_GUIDE.md)——這是第一份給**終端使用者**（實際用這個工具做當沖判斷的交易者）看的文件，跟先前的 README／PROGRESS／TEST_REPORT／DEPLOY_CHECKLIST（都是給開發者/維護者看的）性質不同。內容涵蓋：
+1. 工具定位與免責聲明
+2. 畫面逐項解說（狀態列、多空觀察榜、因子解剖條的顏色對應）
+3. 四個因子的白話說明＋公式＋直覺解釋（量能異常、跳空幅度、相對大盤強弱勢、三大法人買賣超）
+4. 分數計算原理（百分位排名、加權合計、多空觀察榜方向反轉邏輯的說明，特別解釋「為什麼空方榜不是把多方分數倒過來排」這個容易誤解的地方）
+5. 資料新鮮度說明（下午2點限制、週末不更新、暖機期）
+6. 常見問題 FAQ
+
+寫完後逐項對照現有程式碼（`factors.mjs` 的權重數字、`history.mjs` 的 3 天暖機設定、`trading-day.mjs` 的下午 2 點限制、`screen.mjs` 的多空反轉邏輯）確認內容跟實際行為一致，沒有寫錯或跟系統脫節。
+
+**產出檔案（新增/修改）**：
+```
+USER_GUIDE.md（新增）
+README.md（修改，加入連結）
+```
+
+---
+
+## 下一階段預告（尚未開始）
+
+- TPEx 欄位對應、Blobs 讀寫細節、排程註冊、前端視覺呈現
+- 持續觀察 `backfill-history` 在真實環境下的穩定度（換成 `MI_INDEX` 端點後才剛驗證成功，還需要多次使用觀察是否穩定）
+
 

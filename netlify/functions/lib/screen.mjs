@@ -2,8 +2,6 @@
 //
 // 整合流程：今日行情 + 歷史成交量 + 法人買賣超 → 四大因子 → 綜合評分 → 多方/空方觀察榜
 // 這一層負責「串接」，實際計算邏輯都委派給 factors.mjs（已個別測試過）。
-// 注意：marketChangePercent 現在由 scan.mjs 直接傳入（來自真實 TAIEX 或 proxy），
-// screenWatchlists 不再自己計算，這樣 scan.mjs 可以優先用真實值、失敗時 fallback 到 proxy。
 
 import {
   computeVolumeRatio,
@@ -48,13 +46,14 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
  * @param {Map<string, number[]>} volumeHistory 過去 N 日成交量歷史（history.mjs 的輸出）
  * @param {Map<string, number>} [institutionalNetBuy] 三大法人買賣超股數（institutional.mjs 的輸出），可省略（視為全部無資料）
  * @param {Object} [options]
- * @param {number} [options.marketChangePercent=0] 大盤當日漲跌幅百分比（預設 0，由呼叫端傳入真實值或近似值）
  * @param {number} [options.topN=100] 多方／空方各取幾檔（拉大到 100 是為了讓前端篩選功能有足夠的候選池可以篩，不然 Top 30 篩一篩可能剩沒幾檔）
  * @param {Object} [options.weights] 因子權重，傳給 computeCompositeScores
  * @returns {{marketChangePercent: number, longWatchlist: Array, shortWatchlist: Array, totalCandidates: number, excludedNoHistory: number}}
  */
 export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy = new Map(), options = {}) {
-  const { marketChangePercent = 0, topN = 100, weights } = options;
+  const { topN = 100, weights } = options;
+
+  const marketChangePercent = computeMarketChangeProxy(todayQuotes);
 
   const allCandidates = todayQuotes.map((q) => buildCandidate(q, volumeHistory, institutionalNetBuy, marketChangePercent));
 

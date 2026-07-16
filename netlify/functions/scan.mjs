@@ -1,6 +1,6 @@
 // netlify/functions/scan.mjs
 //
-// 完整流程的入口 function：抓今日行情 + 大盤指數 → 讀 Blobs 累積的歷史成交量 → 跑因子篩選 →
+// 完整流程的入口 function：抓今日行情 → 讀 Blobs 累積的歷史成交量 → 跑因子篩選 →
 // 把今日資料存進歷史累積庫（給明天用）→ 回傳多方/空方觀察榜。
 // 這是實際會被 Scheduled Function 呼叫、或使用者手動觸發測試的進入點。
 //
@@ -12,7 +12,6 @@
 import { normalizeTwseRow, normalizeTpexRow, isTradableRow } from './lib/normalize.mjs';
 import { getRecentVolumeHistory, appendDailySnapshot } from './lib/volume-archive.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
-import { fetchMarketIndex, computeMarketChangeProxy } from './lib/factors.mjs';
 import { screenWatchlists } from './lib/screen.mjs';
 import { saveLatestScan } from './lib/storage.mjs';
 import { isWeekend, isMarketDataReady } from './lib/trading-day.mjs';
@@ -46,14 +45,12 @@ export default async (req) => {
   const startedAt = Date.now();
   const todayDateStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
   try {
-    // 四個資料來源彼此獨立，全部平行發出。歷史資料現在是讀 Netlify Blobs 裡累積的紀錄
+    // 三個資料來源彼此獨立，全部平行發出。歷史資料現在是讀 Netlify Blobs 裡累積的紀錄
     // （見 volume-archive.mjs），不再現場跟 TWSE 要好幾天份資料——這是部署後實測發現的
     // 效能瓶頸，改成這樣之後，理論上每次執行只需要各資料來源各一次請求，速度快很多。
-    // 新增：marketIndexResult 用來取得真實 TAIEX 漲跌幅（作為相對強弱因子的分母）。
-    const [twseResult, tpexResult, marketIndexResult, historyResult, institutionalResult] = await Promise.allSettled([
+    const [twseResult, tpexResult, historyResult, institutionalResult] = await Promise.allSettled([
       fetchTodayTwseQuotes(),
       fetchTodayTpexQuotes(),
-      fetchMarketIndex(),
       getRecentVolumeHistory(3, todayDateStr),
       fetchInstitutionalNetBuy(),
     ]);
@@ -65,19 +62,6 @@ export default async (req) => {
 
     if (todayQuotes.length === 0) {
       throw new Error('今日行情抓取失敗，TWSE 與 TPEx 皆無資料可用');
-    }
-
-    // 決定大盤漲跌幅：優先用真實 TAIEX，失敗時 fallback 到加權成交值近似值
-    let marketChangePercent;
-    let marketDataSource = 'proxy'; // 記錄是用真實值還是近似值
-    
-    if (marketIndexResult.status === 'fulfilled') {
-      marketChangePercent = marketIndexResult.value;
-      marketDataSource = 'taiex'; // 用真實值
-    } else {
-      // TAIEX 取得失敗，改用加權成交值近似法計算
-      marketChangePercent = computeMarketChangeProxy(todayQuotes);
-      marketDataSource = 'proxy'; // fallback 到近似值
     }
 
     // 把今天的資料存進 Blobs 累積庫，讓「明天」執行時可以讀到今天的資料當作歷史的一部分。
@@ -120,7 +104,7 @@ export default async (req) => {
         // 比照 history.mjs 驗證歷史資料端點時發現的問題：date 參數不一定可靠，
         // 這裡不是直接丟棄資料（資料本身可能還是有效的，只是不是今天的），而是清楚標記出來，
         // 讓看結果的人知道這個因子可能不是當日資料，之後再視情況決定要不要改成重試或直接排除。
-        institutionalWarning = `法人買賣超資料日期與預期不符（預期 ${institutionalResult.value.requestedDate}，實際拿到 ${institutionalResult.value.actualDate}），本次結果的法人因子可能不是當日資料`;
+        institutionalWarning = `法人買賣超資料日期與預期不符（預期 ${institutionalResult.value.requestedDate}，實際拿到 ${institutionalResult.value.actualDate}），本次結果可能不是最新的法人資料`;
       }
     } else {
       institutionalWarning = `法人買賣超資料抓取失敗（本次結果的法人因子將全部視為中性）: ${institutionalResult.reason.message}`;
@@ -128,22 +112,14 @@ export default async (req) => {
 
     // topN 拉到 100（原本 30）：前端要做成交量/股價/漲幅篩選，如果候選池只有 30 檔，
     // 篩一篩很容易剩沒幾檔可看，拉大候選池篩選才有意義。
-    // 注意：必須在 options 裡傳入 marketChangePercent，screenWatchlists 會用它計算相對強弱因子
-    const result = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, { 
-      topN: 100,
-      marketChangePercent,
-    });
+    const result = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, { topN: 100 });
 
     const payload = {
       generatedAt: new Date().toISOString(),
       elapsedMs: Date.now() - startedAt,
-      marketDataSource, // 記錄這次用的是真實 TAIEX 還是近似值
       dataSourceStatus: {
         twse: twseResult.status === 'fulfilled' ? `ok (${twseResult.value.length} 檔)` : `失敗: ${twseResult.reason.message}`,
         tpex: tpexResult.status === 'fulfilled' ? `ok (${tpexResult.value.length} 檔)` : `失敗: ${tpexResult.reason.message}`,
-        marketIndex: marketIndexResult.status === 'fulfilled'
-          ? `ok (真實 TAIEX: ${marketChangePercent.toFixed(2)}%)`
-          : `失敗，改用加權成交值近似法 (${marketChangePercent.toFixed(2)}%): ${marketIndexResult.reason.message}`,
         institutional: institutionalNetBuy.size > 0
           ? `ok (${institutionalNetBuy.size} 檔)${institutionalWarning ? ` ⚠ ${institutionalWarning}` : ''}`
           : `失敗: ${institutionalWarning}`,

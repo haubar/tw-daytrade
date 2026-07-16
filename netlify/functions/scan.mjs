@@ -128,9 +128,11 @@ export default async (req) => {
 
     // topN 拉到 100（原本 30）：前端要做成交量/股價/漲幅篩選，如果候選池只有 30 檔，
     // 篩一篩很容易剩沒幾檔可看，拉大候選池篩選才有意義。
-    const result = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, { topN: 100 });
-    // 用真實 marketChangePercent 覆蓋 screenWatchlists 產生的近似值
-    result.marketChangePercent = marketChangePercent;
+    // 注意：必須在 options 裡傳入 marketChangePercent，screenWatchlists 會用它計算相對強弱因子
+    const result = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, { 
+      topN: 100,
+      marketChangePercent,
+    });
 
     const payload = {
       generatedAt: new Date().toISOString(),

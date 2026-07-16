@@ -5,8 +5,9 @@
 // formatDateTime/formatPercent 改從 utils/format.js 共用引入。
 import StatItem from './base/StatItem.vue';
 import { formatDateTime, formatPercent } from '../utils/format.js';
+import { computed } from 'vue';
 
-defineProps({
+const props = defineProps({
     generatedAt: { type: String, required: true },
     marketChangePercent: { type: Number, required: true },
     marketDataSource: { type: String, default: 'proxy' }, // 'taiex' = 真實 TAIEX，'proxy' = 加權成交值近似
@@ -15,18 +16,9 @@ defineProps({
     isSample: { type: Boolean, default: false },
 });
 
-function marketLabel() {
+const marketLabel = computed(() => {
   const isRealTaiex = props.marketDataSource === 'taiex';
   return isRealTaiex ? '大盤漲跌幅' : '大盤漲跌幅（近似）';
-}
-
-const props = defineProps({
-    generatedAt: { type: String, required: true },
-    marketChangePercent: { type: Number, required: true },
-    marketDataSource: { type: String, default: 'proxy' }, // 'taiex' 或 'proxy'
-    totalCandidates: { type: Number, required: true },
-    dataSourceStatus: { type: Object, required: true },
-    isSample: { type: Boolean, default: false },
 });
 </script>
 
@@ -39,7 +31,7 @@ const props = defineProps({
 
         <div class="flex flex-wrap gap-4 sm:gap-6">
             <StatItem label="資料時間" :value="formatDateTime(generatedAt)" />
-            <StatItem :label="marketLabel()" :value="formatPercent(marketChangePercent)" :tone="marketChangePercent >= 0 ? 'surge' : 'ebb'" />
+            <StatItem :label="marketLabel" :value="formatPercent(marketChangePercent)" :tone="marketChangePercent >= 0 ? 'surge' : 'ebb'" />
             <StatItem label="候選檔數" :value="String(totalCandidates)" />
         </div>
 

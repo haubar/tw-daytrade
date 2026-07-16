@@ -1,0 +1,18 @@
+# 依賴套件（用 npm install 重新產生，不需要進版控）
+node_modules/
+
+# 建置產物（用 npm run build 重新產生）
+dist/
+
+# Netlify CLI 本機開發產生的暫存資料
+.netlify/
+
+# 環境變數（如果之後有用到，不該進版控）
+.env
+.env.local
+.env.*.local
+
+# 編輯器/系統雜項
+.DS_Store
+*.log
+npm-debug.log*

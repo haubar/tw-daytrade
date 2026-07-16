@@ -35,8 +35,39 @@ export function computeRelativeStrength(stockChangePercent, marketChangePercent)
 }
 
 /**
+ * 從 TWSE OpenAPI MI_INDEX 端點取得真實 TAIEX（發行量加權股價指數）漲跌幅。
+ * 失敗時會拋出 Error，由呼叫端決定要不要 fallback 到 computeMarketChangeProxy。
+ *
+ * @returns {number} TAIEX 當日漲跌幅百分比
+ */
+export async function fetchMarketIndex() {
+  const res = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX', {
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`MI_INDEX API 回應錯誤: HTTP ${res.status}`);
+  
+  const indices = await res.json();
+  if (!Array.isArray(indices)) {
+    throw new Error('MI_INDEX 回應格式不是陣列');
+  }
+
+  // 找「發行量加權股價指數」那筆
+  const taiex = indices.find((idx) => idx['指數'] === '發行量加權股價指數');
+  if (!taiex) {
+    throw new Error('找不到 TAIEX 數據');
+  }
+
+  const changePercent = parseFloat(taiex['漲跌百分比']);
+  if (!Number.isFinite(changePercent)) {
+    throw new Error('TAIEX 漲跌百分比 欄位無法解析');
+  }
+
+  return changePercent;
+}
+
+/**
  * 用「成交值加權平均漲跌幅」近似大盤漲跌幅，作為沒有另外接大盤指數 API 時的替代方案。
- * 之後若要接真正的加權指數（TAIEX），可以直接替換這個函式的呼叫端，不影響其他邏輯。
+ * 當取得真實 TAIEX 失敗時，會用這個函式作為 fallback。
  *
  * @param {Array<{change: number, close: number, volume: number}>} quotes
  * @returns {number} 近似大盤漲跌幅（%）
@@ -93,15 +124,6 @@ export function toPercentileRanks(values) {
   return ranks;
 }
 
-/**
- * 綜合評分：三大量化因子依權重加總（百分位分數 × 權重）
- * 預設權重：量能異常 40% + 跳空幅度 30% + 相對強弱 30%
- * （隔日沖因子屬於 Phase 2，需要候選名單出爐後才查得到分點資料，不在這裡計算）
- *
- * @param {Array<{volumeRatio: number, gapPercent: number, relativeStrength: number}>} candidates
- * @param {{volumeRatio: number, gapPercent: number, relativeStrength: number}} [weights]
- * @returns {Array} 原始 candidates 陣列，每筆加上 score 欄位，並依 score 由高到低排序
- */
 /**
  * 綜合評分：四大因子依權重加總（百分位分數 × 權重）
  * 預設權重：量能異常 30% + 跳空幅度 20% + 相對強弱 20% + 法人買賣超 30%

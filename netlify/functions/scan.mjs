@@ -1,23 +1,35 @@
 // netlify/functions/scan.mjs
 //
-// 完整流程的入口 function：抓今日行情 → 讀 Blobs 累積的歷史成交量 → 跑因子篩選 →
-// 把今日資料存進歷史累積庫（給明天用）→ 回傳多方/空方觀察榜。
+// 完整流程的入口 function：抓今日行情 → 讀 Blobs 累積的歷史成交量 → 第一輪因子篩選
+// → 對第一輪觀察榜裡的上櫃股票額外查 FinMind 法人資料、第二輪重新篩選 → 把今日資料存進
+// 歷史累積庫（給明天用）→ 回傳多方/空方觀察榜。
 // 這是實際會被 Scheduled Function 呼叫、或使用者手動觸發測試的進入點。
 //
 // 部署到 Netlify 後可直接瀏覽器打開 /.netlify/functions/scan 測試。
 // 歷史資料改成從 Blobs 讀（不再現場跟 TWSE 要好幾天份資料），速度應該比舊版快很多，
 // 但剛開始使用的前幾天，累積天數不夠，量能異常因子會先是中性值，可以用
 // backfill-history.mjs 手動補資料加速暖機（見 README）。
+//
+// 為什麼要跑兩輪 screenWatchlists：T86（上市法人資料）可以一次撈全市場，但 FinMind
+// （上櫃法人資料，見 lib/finmind.mjs）一次只能查一支股票，不可能對全部上櫃股都查一次。
+// 做法是先用 T86 資料跑第一輪，找出「進了觀察榜的上櫃股票」，只對這些候選額外查 FinMind
+// 補強，再跑第二輪產生最終結果（見 lib/screen.mjs 的 getTpexCandidateCodes 說明）。
 
 import { normalizeTwseRow, normalizeTpexRow, isTradableRow } from './lib/normalize.mjs';
 import { getRecentVolumeHistory, appendDailySnapshot } from './lib/volume-archive.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
-import { screenWatchlists } from './lib/screen.mjs';
+import { fetchFinMindInstitutionalNetBuy } from './lib/finmind.mjs';
+import { fetchTaiexChangePercent } from './lib/taiex.mjs';
+import { screenWatchlists, getTpexCandidateCodes } from './lib/screen.mjs';
 import { saveLatestScan } from './lib/storage.mjs';
 import { isWeekend, isMarketDataReady } from './lib/trading-day.mjs';
 
 const TWSE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
 const TPEX_URL = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes';
+// 兩階段流程（見 lib/screen.mjs 的 getTpexCandidateCodes 說明）第二輪要查 FinMind 的上櫃候選數量上限。
+// topN=100 時，理論上多空觀察榜合計最多可能有到 100 檔都是上櫃股票，但 FinMind 一次只能查一檔、
+// 免費額度是 300~600 次/小時，這裡設一個保守上限，避免候選數量意外暴增時拖慢整個 scan 或超額度。
+const MAX_FINMIND_CANDIDATES = 20;
 
 // 排程設定：收盤後台灣時間約 14:10（UTC 06:10）自動觸發，週一到週五（UTC cron 語法）
 // 排程觸發與手動打開網址呼叫的是同一個 handler，執行完都會把結果存進 Netlify Blobs（見 lib/storage.mjs），
@@ -48,11 +60,12 @@ export default async (req) => {
     // 三個資料來源彼此獨立，全部平行發出。歷史資料現在是讀 Netlify Blobs 裡累積的紀錄
     // （見 volume-archive.mjs），不再現場跟 TWSE 要好幾天份資料——這是部署後實測發現的
     // 效能瓶頸，改成這樣之後，理論上每次執行只需要各資料來源各一次請求，速度快很多。
-    const [twseResult, tpexResult, historyResult, institutionalResult] = await Promise.allSettled([
+    const [twseResult, tpexResult, historyResult, institutionalResult, taiexResult] = await Promise.allSettled([
       fetchTodayTwseQuotes(),
       fetchTodayTpexQuotes(),
       getRecentVolumeHistory(3, todayDateStr),
       fetchInstitutionalNetBuy(),
+      fetchTaiexChangePercent(),
     ]);
 
     const todayQuotes = [
@@ -110,9 +123,62 @@ export default async (req) => {
       institutionalWarning = `法人買賣超資料抓取失敗（本次結果的法人因子將全部視為中性）: ${institutionalResult.reason.message}`;
     }
 
+    // TAIEX 抓取失敗、或端點回應正常但解析不出資料（回傳 null），都優雅退回原本的估計值
+    // （computeMarketChangeProxy，見 screen.mjs），不會讓整個掃描失敗——大盤漲跌幅本來就只是
+    // 「相對強弱」因子的比較基準之一，不是關鍵路徑上的必要資料。
+    let realTaiexChangePercent = null;
+    let taiexWarning = null;
+    if (taiexResult.status === 'fulfilled' && taiexResult.value !== null) {
+      realTaiexChangePercent = taiexResult.value;
+    } else if (taiexResult.status === 'fulfilled') {
+      taiexWarning = 'TAIEX 端點回應正常，但解析不出「發行量加權股價指數」這筆資料，改用估計值';
+    } else {
+      taiexWarning = `TAIEX 指數抓取失敗，改用估計值: ${taiexResult.reason.message}`;
+    }
+
     // topN 拉到 100（原本 30）：前端要做成交量/股價/漲幅篩選，如果候選池只有 30 檔，
     // 篩一篩很容易剩沒幾檔可看，拉大候選池篩選才有意義。
-    const result = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, { topN: 100 });
+    //
+    // 第一輪：用 T86（上市法人資料）跑一次，上櫃股票的法人因子暫時是中性值。
+    const firstPassResult = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, {
+      topN: 100,
+      marketChangePercent: realTaiexChangePercent ?? undefined,
+    });
+
+    // 第二輪：從第一輪結果裡挑出「進了觀察榜的上櫃股票」，只對這些candidate額外查 FinMind 補強
+    // 法人資料，再重新算一次分數（見 lib/screen.mjs 的 getTpexCandidateCodes 說明，為什麼要分兩輪
+    // 而不是像 T86 那樣一次查全市場——FinMind 的法人資料一次只能查一支股票）。
+    const tpexCandidateCodes = getTpexCandidateCodes(firstPassResult).slice(0, MAX_FINMIND_CANDIDATES);
+
+    let result = firstPassResult;
+    let finmindStatus;
+    if (tpexCandidateCodes.length === 0) {
+      finmindStatus = '本次第一輪觀察榜沒有上櫃股票，不需要查詢';
+    } else {
+      // FinMind 抓取失敗不應該讓整個掃描失敗——這幾檔上櫃股票的法人因子維持中性值，
+      // 沿用第一輪的結果，其他因子/其他股票完全不受影響。
+      try {
+        const { netBuyByCode: finmindNetBuy, failedStockIds } = await fetchFinMindInstitutionalNetBuy(
+          tpexCandidateCodes,
+          todayDateStr
+        );
+
+        if (finmindNetBuy.size > 0) {
+          // 合併 T86（上市）跟 FinMind（上櫃候選）兩份 map：兩者股票代碼不重疊，直接 union 即可。
+          const mergedInstitutionalNetBuy = new Map([...institutionalNetBuy, ...finmindNetBuy]);
+          result = screenWatchlists(todayQuotes, volumeHistory, mergedInstitutionalNetBuy, {
+            topN: 100,
+            marketChangePercent: realTaiexChangePercent ?? undefined,
+          });
+        }
+
+        finmindStatus = `ok（查詢 ${tpexCandidateCodes.length} 檔上櫃候選，成功 ${finmindNetBuy.size} 檔${
+          failedStockIds.length > 0 ? `，失敗 ${failedStockIds.length} 檔` : ''
+        }）`;
+      } catch (e) {
+        finmindStatus = `查詢失敗（本次上櫃候選股的法人因子維持中性值）: ${e.message}`;
+      }
+    }
 
     const payload = {
       generatedAt: new Date().toISOString(),
@@ -126,9 +192,12 @@ export default async (req) => {
         historyArchive: historyResult.status === 'fulfilled'
           ? `ok（累積 ${datesUsed.length}/3 天，${datesUsed.length < 3 ? '尚未暖機完成，量能異常因子會偏向中性' : '天數足夠'}）${archiveWarning ? ` ⚠ ${archiveWarning}` : ''}`
           : `失敗（本次量能異常因子將全部視為中性）: ${historyResult.reason?.message ?? '未知錯誤'}`,
+        taiex: realTaiexChangePercent !== null ? 'ok（使用真實 TAIEX 指數）' : `改用估計值${taiexWarning ? ` ⚠ ${taiexWarning}` : ''}`,
+        finmindTpexInstitutional: finmindStatus,
       },
       historicalDatesUsed: datesUsed,
       marketChangePercent: result.marketChangePercent,
+      marketChangePercentIsEstimate: realTaiexChangePercent === null, // 前端可以用這個決定要不要顯示「近似」字樣
       totalCandidates: result.totalCandidates,
       excludedNoHistory: result.excludedNoHistory,
       longWatchlist: result.longWatchlist,

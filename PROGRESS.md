@@ -876,3 +876,95 @@ netlify/functions/_test-trading-day.mjs（新增 7 個測試案例）
 README.md（更新國定假日相關說明）
 PROGRESS.md（本階段記錄 + 階段25清單更新）
 ```
+
+---
+
+## 階段 27：接上真實 TAIEX 指數（本階段）
+
+**背景**：階段 25 列出的三個待辦事項（TPEx 欄位驗證、上櫃法人因子、真實 TAIEX 指數）先分析難易度跟修改範圍，決定優先做真實 TAIEX 指數——查證後發現比預期簡單很多，而且風險最低（沿用已知可連線的網域），先做完再處理其他兩項。
+
+**查證過程**：
+- 搜尋＋實測確認 `openapi.twse.com.tw/v1/exchangeReport/MI_INDEX` 這個端點會回傳「全部指數」的清單（發行量加權股價指數、臺灣50指數、各類股指數等上百筆），其中「發行量加權股價指數」就是 TAIEX，且「漲跌百分比」欄位已經是算好、帶正負號的數字字串，不用像個股資料那樣額外處理顏色/正負號分開的問題
+- 這個端點跟目前已經在用的 `STOCK_DAY_ALL`（抓今日全市場行情）同一個網域（`openapi.twse.com.tw`），已知穩定可連線，不會像 TPEx 那樣有防爬蟲風險
+
+**完成事項（拆成 A~F 六個小步驟，逐步驗證，避免一次改太多）**：
+1. **步驟 A**：新增 `lib/taiex.mjs`（`fetchTaiexChangePercent`／`parseTaiexChangePercent`），7 個測試案例（正值/負值解析、找不到 TAIEX 這筆、格式錯誤、空輸入等邊界情況）
+2. **步驟 B**：`screen.mjs` 的 `screenWatchlists` 新增可選的 `marketChangePercent` 覆蓋參數，有提供就直接用，沒提供才退回 `computeMarketChangeProxy` 估計值（向後相容，不影響既有呼叫端）；補測試驗證覆蓋值真的有被拿去算 `relativeStrength` 因子，不是傳假的沒作用
+3. **步驟 C**：`scan.mjs` 把 TAIEX 抓取加進原本的平行請求批次（從 4 個變 5 個），抓取失敗或解析不出資料都優雅退回估計值；新增 `dataSourceStatus.taiex` 狀態欄位、頂層新增 `marketChangePercentIsEstimate` 布林值供前端判斷要不要顯示「估計」字樣
+4. **步驟 D**：`StatusBar.vue` 新增 `marketChangePercentIsEstimate` prop，標籤動態顯示「大盤漲跌幅」或「大盤漲跌幅（估計）」，`App.vue` 傳入時對舊資料（沒有這個欄位）做 `?? true` 防禦，避免舊的 Blobs 快取資料造成顯示錯誤（同樣的教訓來自之前「非數值 張」那次事件）
+5. **步驟 E**：全套測試／建置驗證
+6. `USER_GUIDE.md` 四處提到「近似」的說明同步更新（開場已知限制、狀態列表格、因子3公式、FAQ），改成說明「預設用真實 TAIEX，抓取失敗才會退回估計值並在畫面上明確標示」
+
+**測試過程中的一個技術細節**：整合測試的假 `fetch` 原本用「網域」判斷要回傳哪份假資料，但 `STOCK_DAY_ALL`（今日行情）跟 `MI_INDEX`（TAIEX 指數）現在是**同一個網域、不同路徑**，如果只判斷網域會讓兩個請求拿到同一份假資料、測不出真正的邏輯，改成判斷完整路徑後才正確分流。
+
+**驗證方式**：`npm run test`，**164 個測試案例，全數通過**（152 + `_test-taiex.mjs` 新增 7 個 + `_test-screen.mjs` 新增 2 個 + `_test-integration-scan.mjs` 新增 3 個）；`npm run build` 成功
+
+**測試過程中發現並修正的一個疏漏**：寫完 `_test-taiex.mjs` 之後忘記把 `test:taiex` 加進 `package.json` 的 `test` 整合指令，導致跑 `npm run test` 時這 7 個測試其實沒有被執行到（單獨執行 `node netlify/functions/_test-taiex.mjs` 是有跑、也是過的，但沒有被整合進 CI 等級的一鍵測試指令裡）。發現後已經補上，重新驗證過確實有納入。這也是為什麼要養成「每次新增測試檔都要跑一次完整 `npm run test` 確認總數對得起來」的習慣，不能只看單一測試檔自己執行的結果。
+
+**已知未完成 / 待驗證**：
+- 這次沒辦法在這個環境驗證「部署到 Netlify 後，真實請求 `MI_INDEX` 端點會不會遇到跟 `STOCK_DAY_ALL` 早期版本一樣的快取/date 參數問題」——不過這個端點**不需要帶 `date` 參數**（固定回傳最新一筆），風險比當初 `STOCK_DAY_ALL` 那次低很多，但仍待實際部署驗證
+- 前端「大盤漲跌幅（估計）」這個動態標籤還沒有人親自看過畫面確認排版正常
+
+**狀態更新**：本階段已於後續 commit（`717a85b`），目前在本機領先 origin/main，尚未 push。
+
+**產出檔案（已 commit）**：
+```
+netlify/functions/lib/taiex.mjs（新增）
+netlify/functions/lib/screen.mjs（修改，新增 marketChangePercent 覆蓋參數）
+netlify/functions/scan.mjs（修改，接上 TAIEX 抓取）
+netlify/functions/_test-taiex.mjs（新增）
+netlify/functions/_test-screen.mjs（修改，新增覆蓋參數測試）
+netlify/functions/_test-integration-scan.mjs（修改，mock 改依完整路徑分流+新增TAIEX斷言）
+package.json（修改，補上遺漏的 test:taiex 指令）
+src/sampleData.js（修改，補上 taiex 狀態與 marketChangePercentIsEstimate 欄位）
+src/components/StatusBar.vue（修改，動態標籤）
+src/App.vue（修改，傳入新 prop）
+USER_GUIDE.md（修改，四處「近似」說明更新）
+```
+
+---
+
+## 階段 28：上櫃法人因子（FinMind 整合）——步驟 1A + 1B（進行中，尚未 commit）
+
+**背景**：階段 25 待辦清單裡的 #2（上櫃法人因子）之前評估過兩條路都走不通——`bsr.twse.com.tw` 分點查詢有驗證碼保護、券商看盤網站 `fubon-ebrokerdj.fbs.com.tw` 疑似需要 JS 動態渲染且非官方開放資料。使用者提供 [FinMind](https://finmindtrade.com/) 這個開源金融資料平台，查證後確認是正式 REST API（不是灰色地帶爬蟲），且有 `TaiwanStockInstitutionalInvestorsBuySell`（個股三大法人買賣）跟 `TaiwanStockTradingDailyReport`（個股分點資料）兩個資料集，可能同時解決上櫃法人因子跟重啟隔日沖分點因子兩個問題。
+
+**任務拆分**：因範圍變大（兩個資料集 × 多個步驟），拆成 Part 1（法人資料，風險較低）跟 Part 2（分點資料，待 Part 1 驗證過再評估）。Part 1 內部再拆 1A~1F，逐步做逐步驗證。
+
+**架構關鍵決策**：FinMind 的法人資料一次只能查一支股票（不像 T86 可以一次撈全市場），不可能對全部約 800 檔上櫃股票都查一次（會超過免費額度、也可能被擋）。採用兩階段流程：
+1. 第一輪只用 T86（上市法人資料）跑一次 `screenWatchlists`，上櫃股票的法人因子暫時是中性值
+2. 從第一輪結果裡抽出「進了觀察榜的上櫃股票代碼」（`getTpexCandidateCodes`）
+3. 只對這些候選代碼查詢 FinMind（數量通常在一輪 topN 範圍內，不會太多）
+4. 合併 T86 map + FinMind map（兩者股票代碼不重疊，直接 union）
+5. 第二輪用合併後的完整法人資料重新跑 `screenWatchlists`，這次的結果才是最終輸出
+
+這個決策刻意不去動 `screenWatchlists` 本身（保持純函式、單輪計算的設計，這是目前測試覆蓋最完整、也最穩定的核心邏輯），兩階段的呼叫順序放在 `scan.mjs`（下一步 1C）處理。
+
+**完成事項**：
+
+*步驟 1A*：
+- 新增 `lib/finmind.mjs`：
+  - `parseFinMindInstitutionalRows`：把 FinMind 回傳的 `{date, stock_id, buy, name, sell}` 陣列，依股票代碼加總外資+投信+自營商三筆買賣超，得到單一淨買超數字，格式跟 `institutional.mjs` 的輸出（`Map<code, netBuyShares>`）一致，方便合併
+  - `fetchFinMindInstitutionalNetBuy(stockIds, dateStr)`：對指定股票清單平行發送請求（每檔股票各一次，FinMind 的 `data_id` 限制），token 從環境變數 `process.env.FINMIND_TOKEN` 讀取（不寫死在程式碼裡）；特別處理 FinMind 用 HTTP 200 + body 裡的 `status` 欄位表達業務邏輯錯誤（例如額度用完）的習慣，跟一般 REST API 不同
+  - **老實記錄**：這個模組是照 FinMind 官方文件描述的格式撰寫，這次没能在這個環境用真實請求驗證過（FinMind 官網要 JS 渲染、且抓取工具這次 session 出現快取問題，拿不到可信的即時回應），部署後第一次執行務必檢查 `dataSourceStatus`，格式不對的話比照過去 `institutional.mjs`／`history.mjs` 的經驗回來修正
+  - 測試 `_test-finmind.mjs`：10 個案例，涵蓋多筆法人類別加總、多檔股票分別處理、缺欄位/格式錯誤等邊界情況、平行請求中部分失敗不拖累其他檔的處理
+
+*步驟 1B*：
+- `screen.mjs` 新增 `getTpexCandidateCodes(firstPassResult)`：純函式，從第一輪 `screenWatchlists` 結果的多空觀察榜裡抽出上櫃股票代碼，供第二輪查詢 FinMind 用。`screenWatchlists` 本身沒有任何改動
+- 測試補上 6 個案例（混合上市/上櫃資料、topN 範圍外的股票不該被抽出、空輸入的邊界情況）
+
+**驗證方式**：`_test-finmind.mjs` 10 個案例全過、`_test-screen.mjs` 補測後 18 個案例全過（皆為新檔案/新函式，不影響任何既有測試）
+
+**已知未完成 / 待驗證**：
+- `finmind.mjs` 的請求/回應格式完全沒有真實驗證過，是這次風險最高的一塊技術債，部署後第一次執行是真正的試金石
+- 上櫃候選代碼的數量還沒有一個明確上限保護——如果 topN 設太大、剛好又有很多上櫃股進榜，平行發送的請求數可能會偏多，需要在 1C 決定要不要加一個上限（例如最多查 20 檔）
+- 使用者要自行去 Netlify 後台設定 `FINMIND_TOKEN` 環境變數，程式碼這邊已經設計成用 `process.env` 讀取、沒有 token 也不會壞掉（只是查詢額度較低，300次/hr）
+- 步驟 1C（`scan.mjs` 接上兩階段流程）、1D（前端狀態顯示）、1E（文件）、1F（commit）尚未開始
+- Part 2（`TaiwanStockTradingDailyReport` 分點資料）完全尚未評估，等 Part 1 部署驗證過再說
+
+**產出檔案（尚未 commit）**：
+```
+netlify/functions/lib/finmind.mjs（新增）
+netlify/functions/_test-finmind.mjs（新增）
+netlify/functions/lib/screen.mjs（修改，新增 getTpexCandidateCodes）
+netlify/functions/_test-screen.mjs（修改，新增 6 個測試案例）
+```

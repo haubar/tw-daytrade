@@ -64,6 +64,13 @@ function t86HtmlFixture(todayRocDateLabel) {
 </body></html>`;
 }
 
+function taiexJsonFixture() {
+  return [
+    { '指數': '寶島股價指數', '收盤指數': '15234.12', '漲跌': '+', '漲跌點數': '12.34', '漲跌百分比': '0.08' },
+    { '指數': '發行量加權股價指數', '收盤指數': '46744.16', '漲跌': '-', '漲跌點數': '274.83', '漲跌百分比': '-0.58' },
+  ];
+}
+
 function todayAsRocDateLabel() {
   const now = new Date();
   const rocYear = now.getFullYear() - 1911;
@@ -80,8 +87,13 @@ function todayAsRocDateLabel() {
 globalThis.fetch = async (url) => {
   const urlStr = String(url);
 
-  if (urlStr.includes('openapi.twse.com.tw')) {
+  // STOCK_DAY_ALL（今日全市場行情）跟 MI_INDEX（TAIEX 指數）都在 openapi.twse.com.tw 這個網域下，
+  // 要用完整路徑分流，不能只判斷網域，不然兩個請求會拿到同一份假資料。
+  if (urlStr.includes('exchangeReport/STOCK_DAY_ALL')) {
     return { ok: true, json: async () => twseJsonFixture() };
+  }
+  if (urlStr.includes('exchangeReport/MI_INDEX')) {
+    return { ok: true, json: async () => taiexJsonFixture() };
   }
   if (urlStr.includes('tpex.org.tw')) {
     return { ok: true, json: async () => tpexJsonFixture() };
@@ -139,6 +151,36 @@ check(
   `實際: ${body.dataSourceStatus?.institutional}`
 );
 check(typeof body.disclaimer === 'string' && body.disclaimer.length > 0, '應包含免責聲明文字');
+
+// ---- TAIEX 真實指數 ----
+check(
+  body.marketChangePercent === -0.58,
+  'marketChangePercent 應該採用真實 TAIEX 指數的漲跌百分比（-0.58），而不是估計值',
+  `實際: ${body.marketChangePercent}`
+);
+check(
+  body.marketChangePercentIsEstimate === false,
+  '有成功拿到真實 TAIEX 指數時，marketChangePercentIsEstimate 應該是 false',
+  `實際: ${body.marketChangePercentIsEstimate}`
+);
+check(
+  typeof body.dataSourceStatus?.taiex === 'string' && body.dataSourceStatus.taiex.includes('ok'),
+  'dataSourceStatus.taiex 應該顯示 ok（使用真實指數）',
+  `實際: ${body.dataSourceStatus?.taiex}`
+);
+
+// ---- FinMind 上櫃法人資料（兩階段流程）----
+// 這個測試環境沒有真實 Blobs，volumeHistory 永遠是空的，導致所有候選股票都因為「沒有歷史資料」
+// 被排除，第一輪觀察榜是空的，getTpexCandidateCodes 也就永遠回傳空陣列——這代表這裡只能測到
+// 「沒有上櫃候選」這條分支，scan.mjs 裡真正呼叫 fetchFinMindInstitutionalNetBuy 的那段程式碼，
+// 目前沒有被任何自動化測試執行到。這是已知的測試覆蓋缺口，記錄在 PROGRESS.md，
+// 實際的「兩輪合併」邏輯正確性由 _test-screen.mjs（getTpexCandidateCodes）
+// 跟 _test-finmind.mjs（fetchFinMindInstitutionalNetBuy）分別驗證過。
+check(
+  body.dataSourceStatus?.finmindTpexInstitutional === '本次第一輪觀察榜沒有上櫃股票，不需要查詢',
+  'dataSourceStatus.finmindTpexInstitutional 在沒有上櫃候選時應顯示對應訊息',
+  `實際: ${body.dataSourceStatus?.finmindTpexInstitutional}`
+);
 
 // storageWarning 應該要出現——因為這個測試環境沒有真的 Netlify Blobs 環境可以寫入，
 // 這裡驗證的重點是「這個必然會失敗的狀況，有沒有被優雅處理掉，而不是讓整個 function 掛掉」

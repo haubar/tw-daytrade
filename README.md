@@ -15,7 +15,9 @@
 
 - **上市**：TWSE OpenAPI `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`（已用即時資料驗證欄位）
 - **上櫃**：TPEx OpenAPI（欄位待部署後驗證，見下方「已知限制」）
-- **三大法人買賣超**：TWSE T86 日報（目前涵蓋上市股票；上櫃法人資料尚未串接）
+- **三大法人買賣超（上市）**：TWSE T86 日報，一次涵蓋全市場上市股票
+- **三大法人買賣超（上櫃候選）**：[FinMind](https://finmindtrade.com/) `TaiwanStockInstitutionalInvestorsBuySell`，只對「第一輪觀察榜裡的上櫃股票」查詢（見下方「上櫃法人因子」說明），不是全市場
+- **TAIEX 指數**：TWSE OpenAPI `MI_INDEX`，抓取失敗時退回用全市場成交值加權平均漲跌幅估計
 
 ## 專案結構
 
@@ -101,7 +103,23 @@ https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=YYYYMMDD&type=ALLBUT09
 
 原本規劃第四個因子是「隔日沖券商分點買賣超」，但實測發現 TWSE 的分點查詢系統（`bsr.twse.com.tw`）**有圖形驗證碼保護**，無法在 Netlify Function 裡自動化查詢（自動繞過驗證碼本身也不是應該做的事）。
 
-因此改用**三大法人買賣超日報**（外資＋投信＋自營商）取代：免費、有官方端點、可完全自動化、而且是全市場一次撈取（不需要「先篩選再逐檔查詢」的兩階段設計）。這不是真正的分點級資料，但是同樣屬於「有大額資金介入訊號」的免費籌碼面資料。目前只涵蓋**上市（TWSE）**股票，上櫃（TPEx）的法人買賣超是不同資料源，尚未串接——上櫃股票的這個因子會預設為中性（0）。
+因此改用**三大法人買賣超日報**（外資＋投信＋自營商）取代：免費、有官方端點、可完全自動化、而且是全市場一次撈取（不需要「先篩選再逐檔查詢」的兩階段設計）。這不是真正的分點級資料，但是同樣屬於「有大額資金介入訊號」的免費籌碼面資料。
+
+## 關於「上櫃法人因子」的兩階段設計
+
+T86 日報只涵蓋上市（TWSE）股票，上櫃（TPEx）沒有官方對應的一次性全市場端點。找過兩條路都走不通：`bsr.twse.com.tw` 分點查詢有驗證碼保護；券商看盤網站（例如 `fubon-ebrokerdj.fbs.com.tw`）疑似需要 JavaScript 動態渲染才能看到資料，且不是官方開放給程式查詢的資料源，不適合做自動化重複抓取。
+
+改用 [FinMind](https://finmindtrade.com/)——一個正式的開源金融資料平台，有清楚的官方 REST API 文件，是設計給程式查詢用的。但 FinMind 的個股法人資料**一次只能查一支股票**，不像 T86 可以一次撈全市場，不可能對全部約 800 檔上櫃股票都查一次（會超過免費額度、也可能被擋）。因此採用兩階段流程：
+
+1. 第一輪只用 T86（上市法人資料）跑一次 `screenWatchlists`，上櫃股票的法人因子暫時是中性值
+2. 從第一輪結果裡抽出「進了觀察榜的上櫃股票代碼」（`getTpexCandidateCodes`，最多 20 檔）
+3. 只對這些候選代碼查詢 FinMind（平行發送）
+4. 合併 T86 map + FinMind map（兩者股票代碼不重疊，直接 union）
+5. 第二輪用合併後的完整法人資料重新跑 `screenWatchlists`，這次的結果才是最終輸出
+
+**需要設定的環境變數**：`FINMIND_TOKEN`（去 [finmindtrade.com](https://finmindtrade.com/) 免費註冊取得）。在 Netlify 後台 → Site configuration → Environment variables 新增。沒有設定也不會讓系統壞掉，只是查詢額度會比較低（無 token 300次/小時，有 token 600次/小時），且免費層對「近期資料」的存取範圍不完全確定（見下方已知限制）。
+
+**這個資料源目前尚未經過真實請求驗證**（FinMind 官網本身要 JS 渲染才能瀏覽，且開發過程中我方環境的抓取工具出現快取問題，沒能拿到可信的即時回應）。程式碼是照官方文件描述的格式撰寫，部署後第一次執行務必檢查 `dataSourceStatus.finmindTpexInstitutional`，如果解析失敗會列出實際錯誤原因，比照過去 `institutional.mjs`／`history.mjs` 幾次「先用文件寫、部署後校正」的經驗修正。
 
 ## 前端 Dashboard
 
@@ -149,7 +167,7 @@ Dashboard 上方有可拖曳的篩選面板：
 
 ```bash
 npm install
-npm run test                # 跑全部測試（138 個案例，見 TEST_REPORT.md）
+npm run test                # 跑全部測試（181 個案例，見 TEST_REPORT.md）
 npm run test:fetch          # 資料正規化（JSON 格式）
 npm run test:csv            # CSV 解析器
 npm run test:normalize-csv  # 資料正規化（CSV 格式）
@@ -160,6 +178,8 @@ npm run test:institutional  # 三大法人買賣超資料解析
 npm run test:storage        # Netlify Blobs 儲存層（用假的 store 物件測試）
 npm run test:volume-archive # 歷史成交量的 Blobs 累積儲存層
 npm run test:trading-day    # 交易日／週末判斷邏輯
+npm run test:taiex          # 真實 TAIEX 指數抓取與解析
+npm run test:finmind        # FinMind 上櫃法人資料抓取與解析
 npm run test:backfill-pick  # backfill-history 挑選新交易日的核心邏輯
 npm run test:integration    # 端對端整合測試（完整模擬 scan.mjs 真實執行流程）
 npm run test:integration-backfill # backfill-history.mjs 的整合測試
@@ -182,7 +202,7 @@ npm run test:filter-watchlist # 前端篩選邏輯（成交量／股價／漲跌
 ## 已知限制
 
 - **TPEx（上櫃）欄位尚未實際驗證**：因為開發環境的網路白名單擋掉了 TPEx 網域，`normalize.mjs` 裡的 `TPEX_FIELD_CANDIDATES` 是根據常見命名猜測的候選欄位。部署到 Netlify 第一次執行若欄位對不上，錯誤訊息會清楚列出實際欄位名稱，屆時依照錯誤訊息更新候選欄位即可。
-- **上櫃法人資料尚未串接**：目前三大法人買賣超只涵蓋上市（TWSE），上櫃股票的法人因子會以中性值 0 計算。
+- **上櫃法人資料（FinMind）尚未經過真實請求驗證**：程式碼是照官方文件格式撰寫的，見上方「上櫃法人因子的兩階段設計」說明。只對「第一輪觀察榜裡的上櫃股票」查詢，不是全市場——如果一檔上櫃股票沒有進第一輪觀察榜的前段，它的法人因子會維持中性值，不會被 FinMind 補強。
 - **免費 API 無官方使用授權**：抓取頻率過高可能被限流，設計上以「盤後跑一次」為主，避免高頻呼叫。
 
 ## 新手教學

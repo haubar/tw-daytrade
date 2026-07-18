@@ -14,9 +14,12 @@ export const sampleScanResult = {
     tpex: 'ok (812 檔)',
     institutional: 'ok (987 檔)',
     historyArchive: 'ok（累積 3/3 天，天數足夠）',
+    taiex: 'ok（使用真實 TAIEX 指數）',
+    finmindTpexInstitutional: 'ok（查詢 4 檔上櫃候選，成功 4 檔）',
   },
   historicalDatesUsed: ['2026-07-06', '2026-07-03', '2026-07-02', '2026-07-01', '2026-06-30'],
   marketChangePercent: 0.82,
+  marketChangePercentIsEstimate: false,
   totalCandidates: 1748,
   excludedNoHistory: 12,
   longWatchlist: [

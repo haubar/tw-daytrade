@@ -69,6 +69,7 @@ onMounted(loadData);
         <StatusBar
           :generated-at="result.generatedAt"
           :market-change-percent="result.marketChangePercent"
+          :market-change-percent-is-estimate="result.marketChangePercentIsEstimate ?? true"
           :total-candidates="result.totalCandidates"
           :data-source-status="result.dataSourceStatus"
           :is-sample="isSample"
@@ -101,7 +102,10 @@ onMounted(loadData);
         <footer class="mt-6 flex flex-col gap-1 border-t border-hairline pt-4 text-[0.78rem] text-mute">
           <p class="m-0">{{ result.disclaimer }}</p>
           <p class="m-0 font-mono">
-            資料來源：TWSE {{ result.dataSourceStatus.twse }} · TPEx {{ result.dataSourceStatus.tpex }} · 三大法人 {{ result.dataSourceStatus.institutional }}
+            資料來源：TWSE {{ result.dataSourceStatus.twse }} · TPEx {{ result.dataSourceStatus.tpex }} · 三大法人(上市) {{ result.dataSourceStatus.institutional }}
+          </p>
+          <p class="m-0 font-mono">
+            上櫃法人(FinMind) {{ result.dataSourceStatus.finmindTpexInstitutional ?? '（本次結果尚無此資料，可能是舊版快取）' }}
           </p>
         </footer>
       </template>

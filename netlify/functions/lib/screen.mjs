@@ -48,12 +48,14 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
  * @param {Object} [options]
  * @param {number} [options.topN=100] 多方／空方各取幾檔（拉大到 100 是為了讓前端篩選功能有足夠的候選池可以篩，不然 Top 30 篩一篩可能剩沒幾檔）
  * @param {Object} [options.weights] 因子權重，傳給 computeCompositeScores
+ * @param {number} [options.marketChangePercent] 真實的大盤（TAIEX）漲跌百分比，如果有提供就直接使用；
+ *   沒提供時（例如抓取失敗）退回用全市場成交值加權平均漲跌幅估計（見 computeMarketChangeProxy）
  * @returns {{marketChangePercent: number, longWatchlist: Array, shortWatchlist: Array, totalCandidates: number, excludedNoHistory: number}}
  */
 export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy = new Map(), options = {}) {
-  const { topN = 100, weights } = options;
+  const { topN = 100, weights, marketChangePercent: marketChangePercentOverride } = options;
 
-  const marketChangePercent = computeMarketChangeProxy(todayQuotes);
+  const marketChangePercent = marketChangePercentOverride ?? computeMarketChangeProxy(todayQuotes);
 
   const allCandidates = todayQuotes.map((q) => buildCandidate(q, volumeHistory, institutionalNetBuy, marketChangePercent));
 
@@ -98,4 +100,28 @@ export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy
     totalCandidates: candidates.length,
     excludedNoHistory,
   };
+}
+
+/**
+ * 從 screenWatchlists 的結果裡，抽出「上櫃（TPEx）且進了觀察榜」的股票代碼清單。
+ *
+ * 用途：FinMind 的法人買賣超資料要「一檔一檔查」（見 finmind.mjs），沒辦法像 T86 那樣
+ * 一次撈全市場，不可能對全部約 800 檔上櫃股票都查一次。做法是先用其他資料（T86 上市法人資料 +
+ * 量能/跳空/相對強弱三個因子）跑第一輪 screenWatchlists，觀察榜前幾名裡出現的上櫃股票，
+ * 才是「看起來值得多花一次請求去補強法人資料」的候選——這是先用便宜的資料篩、
+ * 再用較貴的資料補強候選名單的兩階段設計，用法跟原本規劃「隔日沖分點」因子時的構想一致。
+ *
+ * 第二輪重新呼叫 screenWatchlists 時，把 FinMind 查到的結果併入 institutionalNetBuy 這個 map
+ * 即可（跟 T86 的 map 直接 union，兩者股票代碼不重疊，不用額外的合併邏輯）。
+ *
+ * @param {{longWatchlist: Array, shortWatchlist: Array}} firstPassResult 第一輪 screenWatchlists 的結果
+ * @returns {string[]} 不重複的股票代碼清單
+ */
+export function getTpexCandidateCodes(firstPassResult) {
+  const codes = new Set();
+  const items = [...(firstPassResult?.longWatchlist ?? []), ...(firstPassResult?.shortWatchlist ?? [])];
+  for (const item of items) {
+    if (item.market === 'TPEx') codes.add(item.code);
+  }
+  return [...codes];
 }

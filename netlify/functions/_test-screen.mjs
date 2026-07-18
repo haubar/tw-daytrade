@@ -1,7 +1,7 @@
 // netlify/functions/_test-screen.mjs
 // 執行方式：npm run test:screen
 
-import { screenWatchlists } from './lib/screen.mjs';
+import { screenWatchlists, getTpexCandidateCodes } from './lib/screen.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -70,6 +70,77 @@ check(
 check(
   result.longWatchlist.every((c) => typeof c.institutionalContribution === 'number'),
   '多方觀察榜每一筆都應該有 institutionalContribution 欄位'
+);
+
+// ---- marketChangePercent 覆蓋功能（真實 TAIEX 指數）----
+// 沒有傳 marketChangePercent 時，應該用估計值（前面的測試已經驗證過是個數字）；
+// 有明確傳入時，應該直接採用那個值，不會再去算估計值。
+const resultWithRealTaiex = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, {
+  topN: 3,
+  marketChangePercent: -0.58,
+});
+check(
+  resultWithRealTaiex.marketChangePercent === -0.58,
+  '有提供 marketChangePercent 時，應該直接採用該值，不使用估計值',
+  `實際: ${resultWithRealTaiex.marketChangePercent}`
+);
+
+// 傳入真實大盤值後，STRONG 相對大盤是 10% - (-0.58%) = 10.58%，比原本用估計值時的相對強弱更大，
+// 用這個驗證「真的有拿去算相對強弱因子」，不是傳進去就沒作用的參數。
+const strongInDefault = result.longWatchlist.find((c) => c.code === 'STRONG');
+const strongInRealTaiex = resultWithRealTaiex.longWatchlist.find((c) => c.code === 'STRONG');
+check(
+  strongInRealTaiex.relativeStrength !== strongInDefault.relativeStrength,
+  '傳入不同的 marketChangePercent，應該要讓 relativeStrength 因子的計算結果跟著變化（確認真的有被使用，不是參數傳假的）'
+);
+
+// ---- getTpexCandidateCodes：兩階段流程第一步，抽出上櫃候選代碼 ----
+// 混合上市（TWSE）跟上櫃（TPEx）股票，驗證只有上櫃、且進了觀察榜（topN 範圍內）的代碼會被抽出
+const mixedMarketQuotes = [
+  { code: 'TWSE_STRONG', name: '上市強勢股', market: 'TWSE', open: 33, high: 34, low: 32, close: 33, volume: 50000, change: 3 },
+  { code: 'TPEX_STRONG', name: '上櫃強勢股', market: 'TPEx', open: 33, high: 34, low: 32, close: 33, volume: 50000, change: 3 },
+  { code: 'TPEX_WEAK', name: '上櫃弱勢股', market: 'TPEx', open: 27, high: 28, low: 26, close: 27, volume: 50000, change: -3 },
+  { code: 'TPEX_FLAT', name: '上櫃平淡股（不該進榜）', market: 'TPEx', open: 30.1, high: 30.2, low: 29.9, close: 30, volume: 10000, change: 0 },
+];
+const mixedVolumeHistory = new Map([
+  ['TWSE_STRONG', [10000, 10000, 10000, 10000, 10000]],
+  ['TPEX_STRONG', [10000, 10000, 10000, 10000, 10000]],
+  ['TPEX_WEAK', [10000, 10000, 10000, 10000, 10000]],
+  ['TPEX_FLAT', [10000, 10000, 10000, 10000, 10000]],
+]);
+// topN=1：多方觀察榜只會取第一名（TWSE_STRONG 或 TPEX_STRONG，兩者條件相同，排序穩定性由既有邏輯決定），
+// 空方觀察榜第一名應是 TPEX_WEAK（唯一有下跌的）；TPEX_FLAT 平淡無奇，topN=1 時應該進不了榜
+const firstPassResult = screenWatchlists(mixedMarketQuotes, mixedVolumeHistory, new Map(), { topN: 1 });
+const tpexCandidates = getTpexCandidateCodes(firstPassResult);
+
+check(
+  tpexCandidates.includes('TPEX_WEAK'),
+  'getTpexCandidateCodes：空方觀察榜裡的上櫃股票（TPEX_WEAK）應該被抽出來',
+  `實際: ${JSON.stringify(tpexCandidates)}`
+);
+check(
+  !tpexCandidates.includes('TPEX_FLAT'),
+  'getTpexCandidateCodes：topN 範圍外（沒進觀察榜）的上櫃股票不應該被抽出來',
+  `實際: ${JSON.stringify(tpexCandidates)}`
+);
+check(
+  tpexCandidates.every((code) => code.startsWith('TPEX_')),
+  'getTpexCandidateCodes：不應該抽出任何上市（TWSE）股票的代碼',
+  `實際: ${JSON.stringify(tpexCandidates)}`
+);
+
+// 邊界情況：空觀察榜、或缺少欄位時應安全回傳空陣列，不拋出例外
+check(
+  JSON.stringify(getTpexCandidateCodes({ longWatchlist: [], shortWatchlist: [] })) === '[]',
+  'getTpexCandidateCodes：空觀察榜應回傳空陣列'
+);
+check(
+  JSON.stringify(getTpexCandidateCodes({})) === '[]',
+  'getTpexCandidateCodes：缺少 longWatchlist/shortWatchlist 欄位時應安全回傳空陣列，不拋出例外'
+);
+check(
+  JSON.stringify(getTpexCandidateCodes(undefined)) === '[]',
+  'getTpexCandidateCodes：傳入 undefined 時應安全回傳空陣列，不拋出例外'
 );
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);

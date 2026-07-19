@@ -9,6 +9,7 @@ import { formatDateTime, formatPercent } from '../utils/format.js';
 defineProps({
     generatedAt: { type: String, required: true },
     marketChangePercent: { type: Number, required: true },
+    marketChangePercentIsEstimate: { type: Boolean, default: true },
     totalCandidates: { type: Number, required: true },
     dataSourceStatus: { type: Object, required: true },
     isSample: { type: Boolean, default: false },
@@ -24,7 +25,11 @@ defineProps({
 
         <div class="flex flex-wrap gap-4 sm:gap-6">
             <StatItem label="資料時間" :value="formatDateTime(generatedAt)" />
-            <StatItem label="大盤漲跌幅（近似）" :value="formatPercent(marketChangePercent)" :tone="marketChangePercent >= 0 ? 'surge' : 'ebb'" />
+            <StatItem
+                :label="marketChangePercentIsEstimate ? '大盤漲跌幅（估計）' : '大盤漲跌幅'"
+                :value="formatPercent(marketChangePercent)"
+                :tone="marketChangePercent >= 0 ? 'surge' : 'ebb'"
+            />
             <StatItem label="候選檔數" :value="String(totalCandidates)" />
         </div>
 

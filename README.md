@@ -50,13 +50,15 @@ tw-daytrade-scanner/
     ├── backfill-history.mjs               # 一次性手動補歷史資料工具（加速暖機，見下方說明）
     ├── latest.mjs                           # 給前端呼叫：讀取 Blobs 裡最新一筆結果
     ├── fetch-daily-quotes.mjs             # 輔助 function：只抓今日行情（除錯用）
-    ├── _test-*.mjs                         # 本地測試腳本（不連網路，用樣本/假資料驗證邏輯）
+    ├── tests/                               # 本地測試腳本（放子資料夾，避免被 Netlify 誤判成要部署的 Function）
+    │   └── _test-*.mjs                       # 不連網路，用樣本/假資料驗證邏輯
     └── lib/
         ├── normalize.mjs                   # 資料正規化：把不同來源／格式轉成統一格式
-        ├── csv.mjs                         # 輕量 CSV 解析器（目前沒有模組在用，見下方說明；保留是因為獨立測試過，之後接其他 CSV 格式的資料源可以直接重用）
-        ├── trading-day.mjs                  # 共用交易日邏輯：判斷週末、產生候選交易日清單
+        ├── trading-day.mjs                  # 共用交易日邏輯：判斷週末、國定假日、產生候選交易日清單
         ├── history.mjs                     # 現場抓取多天歷史資料（僅 backfill-history.mjs 使用）
         ├── volume-archive.mjs               # 歷史成交量的 Blobs 累積儲存層（scan.mjs 實際使用的歷史資料來源）
+        ├── taiex.mjs                        # 真實 TAIEX 指數抓取（MI_INDEX 端點）
+        ├── finmind.mjs                      # 上櫃股票法人資料（FinMind API，見下方說明）
         ├── factors.mjs                     # 因子計算：量能異常／跳空／相對強弱／法人買賣超／綜合評分／因子貢獻度
         ├── institutional.mjs                # 抓取三大法人買賣超日報
         ├── screen.mjs                      # 整合流程：串接以上模組，產生多方/空方觀察榜
@@ -167,10 +169,8 @@ Dashboard 上方有可拖曳的篩選面板：
 
 ```bash
 npm install
-npm run test                # 跑全部測試（181 個案例，見 TEST_REPORT.md）
+npm run test                # 跑全部測試（172 個案例，見 TEST_REPORT.md）
 npm run test:fetch          # 資料正規化（JSON 格式）
-npm run test:csv            # CSV 解析器
-npm run test:normalize-csv  # 資料正規化（CSV 格式）
 npm run test:history        # 歷史資料抓取邏輯（含日期去重）
 npm run test:factors        # 因子計算公式
 npm run test:screen         # 完整篩選流程整合測試

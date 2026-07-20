@@ -961,10 +961,94 @@ USER_GUIDE.md（修改，四處「近似」說明更新）
 - 步驟 1C（`scan.mjs` 接上兩階段流程）、1D（前端狀態顯示）、1E（文件）、1F（commit）尚未開始
 - Part 2（`TaiwanStockTradingDailyReport` 分點資料）完全尚未評估，等 Part 1 部署驗證過再說
 
-**產出檔案（尚未 commit）**：
+**狀態更新**：步驟 1C／1D／1E 已於後續完成（見下方新增記錄），本階段原始記錄僅反映 1A/1B 完成時的狀態。
+
+**產出檔案（1A/1B，已 commit）**：
 ```
 netlify/functions/lib/finmind.mjs（新增）
-netlify/functions/_test-finmind.mjs（新增）
+netlify/functions/_test-finmind.mjs（新增，後移至 tests/ 子資料夾，見下方階段29）
 netlify/functions/lib/screen.mjs（修改，新增 getTpexCandidateCodes）
-netlify/functions/_test-screen.mjs（修改，新增 6 個測試案例）
+netlify/functions/_test-screen.mjs（修改，新增 6 個測試案例，後移至 tests/ 子資料夾）
+```
+
+---
+
+## 階段 29：完成 FinMind 整合 Part 1（1C~1E）+ 部署失敗排查與修復 + 死程式碼清理（本階段）
+
+### 第一部分：完成兩階段流程整合（1C~1E）
+
+**1C（`scan.mjs` 接上兩階段流程）**：
+- 第一輪只用 T86（上市）資料跑 `screenWatchlists`
+- `getTpexCandidateCodes(firstPassResult)` 抽出進了觀察榜的上櫃股票代碼，上限 `MAX_FINMIND_CANDIDATES = 20`（避免候選數量意外暴增拖慢 scan 或超過 FinMind 免費額度）
+- 對候選代碼查詢 FinMind，失敗時優雅降級（維持中性值，不影響其他部分）
+- 合併 T86 map + FinMind map（股票代碼不重疊，直接 union），第二輪重新跑 `screenWatchlists` 產生最終結果
+- 新增 `dataSourceStatus.finmindTpexInstitutional` 狀態欄位
+
+**1D（前端顯示）**：`App.vue` footer 顯示 `finmindTpexInstitutional` 狀態，含防禦性預設值（避免舊快取資料缺欄位時顯示 undefined，同樣的教訓來自更早的「非數值 張」事件）
+
+**1E（文件）**：README 補充資料來源清單（FinMind、TAIEX）、新增「上櫃法人因子的兩階段設計」完整說明段落（含 `FINMIND_TOKEN` 環境變數設定方式）、USER_GUIDE 補充上市/上櫃法人資料來源不同的白話說明、已知限制段落更新、測試指令清單補齊
+
+**測試覆蓋率的誠實記錄**：這個環境沒有真實 Blobs，導致第一輪觀察榜永遠是空的，`getTpexCandidateCodes` 永遠回傳空陣列——`scan.mjs` 裡真正呼叫 FinMind 的那段程式碼，測試只覆蓋到「沒有候選、跳過查詢」這條分支，完整的兩輪合併邏輯只能等部署後驗證。
+
+**驗證方式（此時）**：`npm run test` 181 個案例全數通過；`npm run build` 成功
+
+### 第二部分：使用者回報 Netlify 部署失敗，排查與修復
+
+使用者部署後回報建置失敗，錯誤訊息：
+```
+netlify/functions/_test-edge-tpex-mismatch.mjs:26:21: ERROR: Top-level await is currently not supported with the "cjs" output format
+netlify/functions/scan.mjs:22:40: ERROR: Could not resolve "./lib/taiex.mjs"
+```
+
+**根本原因排查**：這是我方一個明顯的檢查盲點——先前所有階段只驗證過 `npm run build`（Vite 前端打包）跟 `npm run test`（Node 直接執行），**從未驗證過 Netlify 實際打包 Functions 的行為**。Netlify 的規則是：`netlify/functions/` 資料夾**頂層**的每一個檔案都會被當成一個獨立 Function 去打包（子資料夾如 `lib/` 不會，只作為被 import 的模組）。而全部 `_test-*.mjs` 測試腳本一直都放在 `netlify/functions/` 這一層，被 Netlify 誤判成要打包的 Function，其中一支剛好用了 top-level await 觸發打包失敗——但這其實是所有測試檔案共同的問題，不是單一檔案的個案。
+
+`Could not resolve "./lib/taiex.mjs"` 這個錯誤在我方沙盒環境重新檢查時**沒有重現**（`taiex.mjs` 確實存在且已進入 commit `717a85b`，也確認先前提供的下載包內容完整包含此檔案）；推測是使用者套用先前打包檔案到本機 repo 的過程中，該檔案未被正確放置或提交，屬於操作面的落差，而非我方交付內容缺漏——但這點沒有進一步證據可以百分之百確認，如實記錄。
+
+**修復內容**：
+1. 建立 `netlify/functions/tests/` 子資料夾，把全部 `_test-*.mjs`（19 個）搬進去
+2. 修正搬移後所有檔案內的相對路徑 import（`./lib/` → `../lib/`、`./scan.mjs` → `../scan.mjs` 等），`_test-schema-consistency.mjs` 用 `path.join(__dirname, ...)` 算路徑的部分也對應多加一層 `..`
+3. 更新 `package.json` 全部測試指令路徑
+4. **發現並刪除一個孤兒測試檔案 `_test-market-index.mjs`**：測試的是 `fetchMarketIndex`（在 `lib/factors.mjs`）跟 `dataSourceStatus.marketIndex` 等完全不同的欄位命名，跟現有的 `taiex.mjs`／`fetchTaiexChangePercent`／`dataSourceStatus.taiex` 實作不是同一套，研判是先前某次「reset project」留下的殘骸（另一次獨立的 TAIEX 實作嘗試被蓋掉，但這個測試檔案沒被清乾淨）。這個檔案從未被列進 `npm run test`（不影響先前回報的測試通過數字），但它物理上存在於 `netlify/functions/` 頂層，本身就足以讓 Netlify 打包失敗，因此必須清除，而不是修復它去配合一套已經不存在的架構
+5. **新增驗證步驟**：用專案本身已有的 `esbuild`（Netlify 底層也是用它打包 Functions）直接對 4 個真正的頂層 Function（`scan.mjs`／`backfill-history.mjs`／`latest.mjs`／`fetch-daily-quotes.mjs`）做打包測試，確認不再出現任何錯誤——這是這次事件後補上的、真正對症下藥的驗證方式，之後每次异动都應該執行，不能只靠 `npm run test` 跟 `vite build`
+
+**驗證方式**：`npm run test` 181 個全過；esbuild 打包 4 個 Function 全部成功；`npm run build` 成功
+
+### 第三部分：使用者要求檢查未使用的檔案/測試並清除
+
+系統性排查方式：對 `lib/` 底下每個模組、`src/` 底下每個檔案，逐一搜尋是否被任何生產程式碼（非自身測試）引用。過程中一度誤判 `factors.mjs` 也是死程式碼（因為初版 grep 沒考慮到 `screen.mjs` 從同層用 `./factors.mjs` 引用、不带 `lib/` 前綴的寫法），修正檢查方式後排除誤判。
+
+**確認的死程式碼**（階段 21 從 `STOCK_DAY_ALL`／CSV 格式換成 `MI_INDEX`／JSON 格式端點後留下，先前記錄是「保留供未來重用」，此次應使用者要求清除）：
+- `lib/csv.mjs`（`parseCsv`）：只有自己的測試在用
+- `normalize.mjs` 的 `normalizeTwseCsvRow`／`extractDateFromCsvRow`：只有自己的測試在用（`toNumber`／`normalizeTwseRow`／`normalizeTpexRow`／`isTradableRow` 都確認仍在使用，予以保留）
+
+**完成事項**：
+1. 刪除 `lib/csv.mjs`、`tests/_test-csv.mjs`、`tests/_test-normalize-csv.mjs`
+2. `normalize.mjs` 移除兩個死函式，保留仍在使用的部分
+3. `package.json` 移除 `test:csv`／`test:normalize-csv` 指令與其在整合指令裡的呼叫
+4. README 專案結構樹移除 `csv.mjs` 條目、補上先前也漏掉的 `taiex.mjs`／`finmind.mjs`／測試路徑改為 `tests/` 子資料夾的說明，測試指令清單同步
+
+**確認沒有其他孤兒檔案**：`src/` 底下每個 `.vue`／`.js` 檔案都至少被引用一次；4 個頂層 Function 都是各自獨立部署的端點，沒有被 import 是正常現象（非孤兒）。
+
+**驗證方式**：`npm run test` **172 個測試案例，全數通過**（181 − 9，減少數正好對應被刪除的 `test:csv` 4 案例 + `test:normalize-csv` 5 案例）；esbuild 打包 4 個 Function 全部成功；`npm run build` 成功
+
+**已知未完成 / 待驗證**：
+- 這次的 Netlify 打包修復完全沒辦法在這個環境用「真正的 `netlify deploy`」驗證，esbuild 直接打包是目前能做到最接近的模擬，但不是 100% 保證跟 Netlify 官方建置環境行為一致，仍需使用者重新部署確認
+- `Could not resolve "./lib/taiex.mjs"` 這個錯誤的真正成因（使用者套用檔案的過程 vs 其他未知原因）沒有確鑿證據，只能推測
+- Part 1 的核心風險依舊：`finmind.mjs` 的請求/回應格式仍未經過真實請求驗證
+- Part 2（分點資料）尚未評估
+
+**產出檔案（本階段全部異動，尚未 commit）**：
+```
+netlify/functions/tests/（新增資料夾，含全部19個測試檔案從頂層移入，1個孤兒檔案已刪除故實際18個）
+netlify/functions/scan.mjs（1C：接上兩階段流程）
+netlify/functions/lib/normalize.mjs（移除死函式）
+package.json（測試路徑更新、移除csv相關指令）
+src/App.vue（1D：footer顯示finmind狀態）
+src/sampleData.js（補上finmindTpexInstitutional欄位）
+README.md（1E文件更新 + 死程式碼清理後的結構樹修正）
+USER_GUIDE.md（1E文件更新）
+已刪除：netlify/functions/lib/csv.mjs
+已刪除：netlify/functions/tests/_test-market-index.mjs（孤兒檔案）
+已刪除：netlify/functions/tests/_test-csv.mjs
+已刪除：netlify/functions/tests/_test-normalize-csv.mjs
 ```

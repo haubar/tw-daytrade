@@ -111,38 +111,6 @@ export function normalizeTpexRow(row) {
 }
 
 /**
- * 正規化 TWSE 歷史資料端點（www.twse.com.tw/rwd/.../STOCK_DAY_ALL）回傳的 CSV 列。
- * 該端點欄位為中文，已用即時抓到的樣本資料驗證過（見 _test-csv.mjs / _test-fetch-daily-quotes.mjs）。
- */
-export function normalizeTwseCsvRow(row) {
-  return {
-    market: 'TWSE',
-    code: row['證券代號'],
-    name: row['證券名稱'],
-    open: toNumber(row['開盤價']),
-    high: toNumber(row['最高價']),
-    low: toNumber(row['最低價']),
-    close: toNumber(row['收盤價']),
-    volume: toNumber(row['成交股數']),
-    change: toNumber(row['漲跌價差']),
-  };
-}
-
-/**
- * 從 CSV 列取出「日期」欄位，格式為民國年 YYYMMDD（例如 1150707 = 2026-07-07），
- * 轉成西元 YYYY-MM-DD，方便跟預期日期比對，偵測 date 參數是否真的生效。
- */
-export function extractDateFromCsvRow(row) {
-  const raw = row['日期'];
-  if (!raw || raw.length !== 7) return null;
-  const rocYear = parseInt(raw.slice(0, 3), 10);
-  const month = raw.slice(3, 5);
-  const day = raw.slice(5, 7);
-  const year = rocYear + 1911;
-  return `${year}-${month}-${day}`;
-}
-
-/**
  * 過濾掉當日無交易（volume = 0）或明顯異常（close = 0）的資料列，
  * 這些多半是當日暫停交易、剛下市，或 ETF 尚未開始交易的標的，不適合拿來算因子。
  */

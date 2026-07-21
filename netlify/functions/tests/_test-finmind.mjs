@@ -66,6 +66,8 @@ assertEqual(
 const emptyResult = await fetchFinMindInstitutionalNetBuy([], '2026-07-14');
 assertEqual(mapToObj(emptyResult.netBuyByCode), {}, '空的股票代碼清單應直接回傳空結果，不發送任何請求');
 assertEqual(emptyResult.failedStockIds, [], '空的股票代碼清單不應有任何失敗紀錄');
+assertEqual(emptyResult.emptyStockIds, [], '空的股票代碼清單不應有任何「空資料」紀錄');
+assertEqual(emptyResult.debugInfo, [], '空的股票代碼清單 debugInfo 應為空陣列');
 
 // ---- fetchFinMindInstitutionalNetBuy：用假的 fetch 驗證平行請求＋部分失敗的處理 ----
 const originalFetch = globalThis.fetch;
@@ -88,15 +90,45 @@ globalThis.fetch = async (url) => {
     // 模擬 FinMind 用 HTTP 200 + body.status 表達額度用完等業務邏輯錯誤
     return { ok: true, json: async () => ({ status: 400, msg: 'Your level is free. Please update your user level.' }) };
   }
+  if (urlStr.includes('data_id=7777')) {
+    // 模擬「技術上成功，但 data 是空陣列」——這是真實部署第一次遇到的情境：
+    // 查了 20 檔全部回傳空陣列，原本的程式碼會讓這些股票「既不算成功也不算失敗」憑空消失，
+    // 這裡驗證修正後的行為：應該被計入 emptyStockIds，而不是被吞掉。
+    return { ok: true, json: async () => ({ status: 200, data: [] }) };
+  }
   throw new Error(`測試沒有預期到這個 URL: ${urlStr}`);
 };
 
-const mixedResult = await fetchFinMindInstitutionalNetBuy(['5347', '9999', '8888'], '2026-07-14');
+const mixedResult = await fetchFinMindInstitutionalNetBuy(['5347', '9999', '8888', '7777'], '2026-07-14');
 assertEqual(mapToObj(mixedResult.netBuyByCode), { '5347': 300000 }, '部分股票查詢失敗時，成功的那幾檔仍應正確回傳');
 assertEqual(
   mixedResult.failedStockIds.sort(),
   ['8888', '9999'],
   '查詢失敗（HTTP 錯誤或業務邏輯錯誤）的股票代碼應該被記錄下來，方便回報有幾檔沒查到'
+);
+assertEqual(
+  mixedResult.emptyStockIds,
+  ['7777'],
+  '技術上成功但 data 是空陣列的股票，應該被記錄在 emptyStockIds，不能既不算成功也不算失敗地憑空消失'
+);
+assertEqual(mixedResult.debugInfo.length, 4, 'debugInfo 應該涵蓋全部 4 檔股票（不管成功/失敗/空資料）');
+const debug5347 = mixedResult.debugInfo.find((d) => d.stockId === '5347');
+assertEqual(debug5347.rowCount, 1, '5347 的 debugInfo 應該正確記錄回傳的資料筆數');
+const debug7777 = mixedResult.debugInfo.find((d) => d.stockId === '7777');
+assertEqual(debug7777.rowCount, 0, '7777（空資料）的 debugInfo 應該記錄筆數為 0，而不是完全沒有紀錄');
+const debug9999 = mixedResult.debugInfo.find((d) => d.stockId === '9999');
+assertEqual(debug9999.rowCount, null, '9999（請求失敗）的 debugInfo 應該記錄 rowCount 為 null（不是 0，避免跟「空資料」混淆），並帶有 error 訊息');
+assertEqual(typeof debug9999.error, 'string', '9999 的 debugInfo 應該帶有錯誤訊息字串');
+
+// ---- 全部都是空資料的情況（重現真實部署遇到的「查20檔成功0檔」情境）----
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ status: 200, data: [] }) });
+const allEmptyResult = await fetchFinMindInstitutionalNetBuy(['1111', '2222', '3333'], '2026-07-14');
+assertEqual(mapToObj(allEmptyResult.netBuyByCode), {}, '全部都是空資料時，netBuyByCode 應為空');
+assertEqual(allEmptyResult.failedStockIds, [], '全部都是空資料時，不應該有任何 failedStockIds（這些請求技術上都成功了）');
+assertEqual(
+  allEmptyResult.emptyStockIds.sort(),
+  ['1111', '2222', '3333'],
+  '全部都是空資料時，應該全部被記錄在 emptyStockIds，而不是「查了3檔、成功0檔、也沒有任何失敗紀錄」這種難以診斷的矛盾結果'
 );
 
 globalThis.fetch = originalFetch;

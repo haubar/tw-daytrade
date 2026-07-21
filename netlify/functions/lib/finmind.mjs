@@ -58,15 +58,16 @@ export function parseFinMindInstitutionalRows(rows) {
  *
  * @param {string[]} stockIds 要查詢的股票代碼清單（例如 screen.mjs 篩出的上櫃候選股）
  * @param {string} dateStr 'YYYY-MM-DD'
- * @returns {Promise<{netBuyByCode: Map<string, number>, failedStockIds: string[]}>}
+ * @returns {Promise<{netBuyByCode: Map<string, number>, failedStockIds: string[], emptyStockIds: string[], debugInfo: Array}>}
  */
 export async function fetchFinMindInstitutionalNetBuy(stockIds, dateStr) {
   const token = process.env.FINMIND_TOKEN;
   const netBuyByCode = new Map();
   const failedStockIds = [];
+  const emptyStockIds = []; // 請求技術上成功，但 FinMind 回傳的 data 是空陣列（沒有失敗，但也沒有資料）
 
   if (!stockIds || stockIds.length === 0) {
-    return { netBuyByCode, failedStockIds };
+    return { netBuyByCode, failedStockIds, emptyStockIds, debugInfo: [] };
   }
 
   const results = await Promise.allSettled(
@@ -91,21 +92,35 @@ export async function fetchFinMindInstitutionalNetBuy(stockIds, dateStr) {
         // 跟一般 REST API 用 HTTP 狀態碼表達錯誤的習慣不同，要另外檢查
         throw new Error(`FinMind 回應業務邏輯錯誤: ${body.msg ?? '未知原因'}（股票代碼 ${stockId}）`);
       }
-      return { stockId, rows: body.data };
+      return { stockId, rows: body.data, hasToken: Boolean(token) };
     })
   );
 
+  // 診斷資訊：跟 backfill-history.mjs 的 debugInfo 同樣的精神——第一次真實部署發現
+  // 「查了 20 檔、成功 0 檔、但也沒有失敗紀錄」這種矛盾結果後才加的。這代表「技術上成功
+  // 但資料是空陣列」的情況完全沒被計入成功也沒被計入失敗，直接消失，沒有這份 debugInfo
+  // 的話根本看不出問題出在哪（例如免費層 token 對近期日期的存取範圍受限，導致每筆查詢
+  // 都技術上成功、但回傳空陣列）。
+  const debugInfo = [];
+
   results.forEach((result, i) => {
+    const stockId = stockIds[i];
     if (result.status === 'fulfilled') {
+      const rowCount = Array.isArray(result.value.rows) ? result.value.rows.length : -1;
+      debugInfo.push({ stockId, rowCount, hasToken: result.value.hasToken, error: null });
+
       const parsed = parseFinMindInstitutionalRows(result.value.rows);
       const net = parsed.get(result.value.stockId);
       if (net !== undefined) {
         netBuyByCode.set(result.value.stockId, net);
+      } else {
+        emptyStockIds.push(stockId);
       }
     } else {
-      failedStockIds.push(stockIds[i]);
+      debugInfo.push({ stockId, rowCount: null, hasToken: Boolean(token), error: result.reason.message });
+      failedStockIds.push(stockId);
     }
   });
 
-  return { netBuyByCode, failedStockIds };
+  return { netBuyByCode, failedStockIds, emptyStockIds, debugInfo };
 }

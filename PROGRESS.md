@@ -1052,3 +1052,43 @@ USER_GUIDE.md（1E文件更新）
 已刪除：netlify/functions/tests/_test-csv.mjs
 已刪除：netlify/functions/tests/_test-normalize-csv.mjs
 ```
+
+---
+
+## 階段 30：修正 Netlify 打包重複檔案殘留 + FinMind 首次真實請求診斷（本階段）
+
+### 第一部分：清理未完全套用的檔案清理
+
+使用者 push 階段 29 的成果後，Netlify build 成功，但重新檢查 origin/main 時發現：階段 29 規劃要刪除的檔案（19 個頂層 `_test-*.mjs`、`lib/csv.mjs`、`tests/_test-csv.mjs`、`tests/_test-normalize-csv.mjs`）並沒有真的被移除，只是新版本（`tests/` 子資料夾版本）被新增上去，變成新舊並存。用 `npm run test` 實測確認新舊並存狀態下測試依然 172 個全過（`package.json` 的整合指令已經正確排除了舊路徑跟已刪除的測試），但物理上的重複檔案仍是技術債，且是使用者明確要求清除的目標。用 `git rm` 正式刪除全部 22 個重複/死程式碼檔案，重新驗證 `npm run test`（172 全過）、esbuild 打包 4 個 Function（全過）、`npm run build`（成功）。
+
+### 第二部分：FinMind 首次真實部署結果與診斷修正
+
+使用者提供部署後的真實回應：`"finmindTpexInstitutional": "ok（查詢 20 檔上櫃候選，成功 0 檔）"`——這是 `finmind.mjs` 第一次真正被驗證，結果發現一個真實的邏輯缺陷：**查詢 20 檔、成功 0 檔，卻也沒有顯示「失敗 X 檔」**。
+
+**根因**：原本的 `fetchFinMindInstitutionalNetBuy` 只區分「請求失敗（HTTP 錯誤或 FinMind 業務邏輯錯誤）」跟「成功且有資料」兩種情況。但如果一筆請求技術上完全成功（HTTP 200、`body.status` 也是 200），只是回傳的 `data` 是空陣列，這種情況既不會被計入 `netBuyByCode`（因為沒有資料可加總），也不會被計入 `failedStockIds`（因為 Promise 確實 fulfilled、沒有拋出例外）——會直接從所有統計數字裡消失，導致「查了 20 檔、成功 0 檔、也沒有失敗」這種無法診斷的矛盾結果。
+
+**完成事項**：
+1. `finmind.mjs`：`fetchFinMindInstitutionalNetBuy` 新增 `emptyStockIds`（技術上成功但資料是空陣列的股票代碼）跟 `debugInfo`（每一筆查詢的股票代碼、回傳資料筆數、有沒有錯誤訊息），三種結果（成功／空資料／失敗）現在互斥且加總起來一定等於查詢總數，不會再有東西憑空消失
+2. `scan.mjs`：`dataSourceStatus.finmindTpexInstitutional` 的狀態訊息重寫，分別列出成功／空資料／失敗三種數量；當成功數是 0 時，額外附上前 3 筆的 `debugInfo` 內容，不用再等下一輪部署才能看到診斷細節
+3. 測試：`_test-finmind.mjs` 新增情境涵蓋「部分請求空資料」跟「全部請求都空資料」（後者正是重現這次真實遇到的狀況），驗證 `emptyStockIds`／`debugInfo` 的正確性，共新增 11 個案例（10 → 21）
+4. README 補充首次真實部署結果的說明，並請使用者下次部署後回報新版 `finmindTpexInstitutional` 的完整內容
+
+**驗證方式**：`npm run test` **183 個測試案例，全數通過**；esbuild 打包 4 個 Function 全部成功；`npm run build` 成功
+
+**已知未完成 / 待驗證**：
+- **根本原因仍未確定**：`emptyStockIds` 偏高最可能的解釋是免費層／目前 token 對近期日期的資料存取範圍有限制（呼應階段 20 討論過的疑慮），但這只是推測，需要下一次真實請求的 `debugInfo` 內容才能確認。可能的原因包括：token 額度、免費層日期範圍限制、`data_id` 格式不符预期（例如是否需要考慮上櫃股票代碼的特殊格式）、或候選股票剛好在查詢日期真的沒有法人交易（機率低但不能排除）
+- Part 2（`TaiwanStockTradingDailyReport` 分點資料）依然完全尚未評估
+
+**產出檔案（本階段全部異動，尚未 commit）**：
+```
+已刪除（22個，見上方第一部分說明）：
+  netlify/functions/_test-*.mjs（19個頂層重複檔案）
+  netlify/functions/lib/csv.mjs
+  netlify/functions/tests/_test-csv.mjs
+  netlify/functions/tests/_test-normalize-csv.mjs
+修改：
+  netlify/functions/lib/finmind.mjs（新增 emptyStockIds／debugInfo）
+  netlify/functions/scan.mjs（狀態訊息重寫）
+  netlify/functions/tests/_test-finmind.mjs（新增 11 個測試案例）
+  README.md（測試數量、FinMind 診斷說明更新）
+```

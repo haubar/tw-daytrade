@@ -158,7 +158,7 @@ export default async (req) => {
       // FinMind 抓取失敗不應該讓整個掃描失敗——這幾檔上櫃股票的法人因子維持中性值，
       // 沿用第一輪的結果，其他因子/其他股票完全不受影響。
       try {
-        const { netBuyByCode: finmindNetBuy, failedStockIds } = await fetchFinMindInstitutionalNetBuy(
+        const { netBuyByCode: finmindNetBuy, failedStockIds, emptyStockIds, debugInfo } = await fetchFinMindInstitutionalNetBuy(
           tpexCandidateCodes,
           todayDateStr
         );
@@ -172,9 +172,20 @@ export default async (req) => {
           });
         }
 
-        finmindStatus = `ok（查詢 ${tpexCandidateCodes.length} 檔上櫃候選，成功 ${finmindNetBuy.size} 檔${
-          failedStockIds.length > 0 ? `，失敗 ${failedStockIds.length} 檔` : ''
-        }）`;
+        // 「成功」跟「技術上成功但資料是空的」分開報告，不要都混在「成功」數字裡——
+        // 部署後第一次真實請求就發生過「查 20 檔、成功 0 檔、也沒有失敗紀錄」這種矛盾結果，
+        // 原因是這兩種情況以前沒有分開追蹤，20 筆技術上成功、但 data 是空陣列的請求全部
+        // 不見蹤影。emptyStockIds.length 偏高（例如整批都是空）通常代表 token/免費層對
+        // 近期日期的存取範圍有限制，而不是「這些股票剛好都沒有法人買賣」的巧合。
+        const parts = [`查詢 ${tpexCandidateCodes.length} 檔上櫃候選`, `成功 ${finmindNetBuy.size} 檔`];
+        if (emptyStockIds.length > 0) parts.push(`空資料 ${emptyStockIds.length} 檔`);
+        if (failedStockIds.length > 0) parts.push(`失敗 ${failedStockIds.length} 檔`);
+        finmindStatus = `${finmindNetBuy.size > 0 ? 'ok' : '⚠ 全部無有效資料'}（${parts.join('，')}）`;
+
+        // 成功數是 0 時，把前 3 筆的診斷細節也附上，不用等下一輪再手動排查
+        if (finmindNetBuy.size === 0 && debugInfo.length > 0) {
+          finmindStatus += ` | 診斷樣本: ${JSON.stringify(debugInfo.slice(0, 3))}`;
+        }
       } catch (e) {
         finmindStatus = `查詢失敗（本次上櫃候選股的法人因子維持中性值）: ${e.message}`;
       }

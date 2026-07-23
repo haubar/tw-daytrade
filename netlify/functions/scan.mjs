@@ -15,7 +15,7 @@
 // 做法是先用 T86 資料跑第一輪，找出「進了觀察榜的上櫃股票」，只對這些候選額外查 FinMind
 // 補強，再跑第二輪產生最終結果（見 lib/screen.mjs 的 getTpexCandidateCodes 說明）。
 
-import { normalizeTwseRow, normalizeTpexRow, isTradableRow } from './lib/normalize.mjs';
+import { normalizeTwseRow, normalizeTpexRow, isTradableRow, isWarrant } from './lib/normalize.mjs';
 import { getRecentVolumeHistory, appendDailySnapshot } from './lib/volume-archive.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
 import { fetchFinMindInstitutionalNetBuy } from './lib/finmind.mjs';
@@ -40,7 +40,10 @@ async function fetchTodayTwseQuotes() {
   const res = await fetch(TWSE_URL, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`TWSE API 回應錯誤: HTTP ${res.status}`);
   const rows = await res.json();
-  return rows.map(normalizeTwseRow).filter(isTradableRow);
+  // isWarrant 過濾權證（見 lib/normalize.mjs 的說明）：雖然這次真實部署發現的異常數字
+  // （4644 檔）是在 TPEx 那邊，但 TWSE 上市權證理論上也可能混在 STOCK_DAY_ALL 的回應裡，
+  // 兩邊一併過濾，不要只挑出問題的那一邊修。
+  return rows.map(normalizeTwseRow).filter(isTradableRow).filter((q) => !isWarrant(q));
 }
 
 async function fetchTodayTpexQuotes() {
@@ -50,7 +53,7 @@ async function fetchTodayTpexQuotes() {
   const res = await fetch(TPEX_URL, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`TPEx API 回應錯誤: HTTP ${res.status}`);
   const rows = await res.json();
-  return rows.map(normalizeTpexRow).filter(isTradableRow);
+  return rows.map(normalizeTpexRow).filter(isTradableRow).filter((q) => !isWarrant(q));
 }
 
 export default async (req) => {
@@ -210,6 +213,12 @@ export default async (req) => {
       marketChangePercent: result.marketChangePercent,
       marketChangePercentIsEstimate: realTaiexChangePercent === null, // 前端可以用這個決定要不要顯示「近似」字樣
       totalCandidates: result.totalCandidates,
+      // 診斷用：有多少「有歷史資料可以參與排名」的候選股是上市/上櫃。如果 tpexCandidatesWithHistory
+      // 是 0，代表上櫃股票根本沒進入候選池，FinMind 兩階段流程的候選名單自然也會是空的——
+      // 這樣才能分清楚「上櫃候選是 0」到底是因為「上櫃股票歷史資料沒累積到」還是「累積到了、
+      // 但這次剛好沒有一檔上櫃股票排進前 100 名」，兩種情況的因應方式完全不同。
+      twseCandidatesWithHistory: result.twseCandidatesWithHistory,
+      tpexCandidatesWithHistory: result.tpexCandidatesWithHistory,
       excludedNoHistory: result.excludedNoHistory,
       longWatchlist: result.longWatchlist,
       shortWatchlist: result.shortWatchlist,

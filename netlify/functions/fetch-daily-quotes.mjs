@@ -6,7 +6,7 @@
 //
 // 部署到 Netlify 後可直接用瀏覽器打開 /.netlify/functions/fetch-daily-quotes 測試。
 
-import { normalizeTwseRow, normalizeTpexRow, isTradableRow } from './lib/normalize.mjs';
+import { normalizeTwseRow, normalizeTpexRow, isTradableRow, isWarrant } from './lib/normalize.mjs';
 
 const TWSE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
 // TPEx 端點待實際部署後確認確切路徑與欄位（見下方 fetchTpexQuotes 註解）
@@ -20,15 +20,18 @@ async function fetchTwseQuotes() {
   const rows = await res.json();
   const normalized = [];
   const errors = [];
+  let warrantCount = 0;
   for (const row of rows) {
     try {
       const n = normalizeTwseRow(row);
-      if (isTradableRow(n)) normalized.push(n);
+      if (!isTradableRow(n)) continue;
+      if (isWarrant(n)) { warrantCount++; continue; }
+      normalized.push(n);
     } catch (e) {
       errors.push({ code: row.Code, message: e.message });
     }
   }
-  return { normalized, errors };
+  return { normalized, errors, warrantCount };
 }
 
 async function fetchTpexQuotes() {
@@ -43,17 +46,20 @@ async function fetchTpexQuotes() {
   const rows = await res.json();
   const normalized = [];
   const errors = [];
+  let warrantCount = 0;
   for (const row of rows) {
     try {
       const n = normalizeTpexRow(row);
-      if (isTradableRow(n)) normalized.push(n);
+      if (!isTradableRow(n)) continue;
+      if (isWarrant(n)) { warrantCount++; continue; }
+      normalized.push(n);
     } catch (e) {
       errors.push({ raw: row, message: e.message });
       // TPEx 欄位對應目前尚未驗證過，第一筆失敗就停止，避免洗版一樣的錯誤訊息
       break;
     }
   }
-  return { normalized, errors };
+  return { normalized, errors, warrantCount };
 }
 
 export default async (req) => {
@@ -66,10 +72,10 @@ export default async (req) => {
     const result = {
       fetchedAt: new Date().toISOString(),
       twse: twse.status === 'fulfilled'
-        ? { count: twse.value.normalized.length, errorCount: twse.value.errors.length, sample: twse.value.normalized.slice(0, 3) }
+        ? { count: twse.value.normalized.length, errorCount: twse.value.errors.length, warrantCount: twse.value.warrantCount, sample: twse.value.normalized.slice(0, 3) }
         : { error: twse.reason.message },
       tpex: tpex.status === 'fulfilled'
-        ? { count: tpex.value.normalized.length, errorCount: tpex.value.errors.length, sample: tpex.value.normalized.slice(0, 3), firstError: tpex.value.errors[0] }
+        ? { count: tpex.value.normalized.length, errorCount: tpex.value.errors.length, warrantCount: tpex.value.warrantCount, sample: tpex.value.normalized.slice(0, 3), firstError: tpex.value.errors[0] }
         : { error: tpex.reason.message },
     };
 

@@ -3,7 +3,7 @@
 // 本地測試腳本：不連網路，用「真實 API 回傳過的樣本資料」驗證 normalize.mjs 的邏輯。
 // 執行方式：npm run test:fetch
 
-import { normalizeTwseRow, normalizeTpexRow, isTradableRow } from '../lib/normalize.mjs';
+import { normalizeTwseRow, normalizeTpexRow, isTradableRow, isWarrant } from '../lib/normalize.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -136,6 +136,26 @@ try {
     console.log('❌ TPEx 錯誤訊息內容不符預期:', e.message);
   }
 }
+
+// ---- isWarrant：真實部署發現 TPEx 回應混入權證後補上的過濾邏輯 ----
+// 真實範例（部署後實際看到的資料，代碼是 6 位數字，名稱帶「購」「售」+序號）
+assertEqual(
+  isWarrant({ code: '709205', name: '鈊象永豐63購01' }),
+  true,
+  'isWarrant：709205（6位數代碼）應被判定為權證'
+);
+assertEqual(
+  isWarrant({ code: '070001', name: '旺矽元大5A售03' }),
+  true,
+  'isWarrant：旺矽元大5A售03（名稱帶「售」+序號）應被判定為權證'
+);
+// 真實股票不應該被誤判
+assertEqual(isWarrant({ code: '2330', name: '台積電' }), false, 'isWarrant：2330 台積電（4位數代碼）不應被判定為權證');
+assertEqual(isWarrant({ code: '5347', name: '世界' }), false, 'isWarrant：5347 世界（4位數代碼）不應被判定為權證');
+assertEqual(isWarrant({ code: '00878', name: '國泰永續高股息' }), false, 'isWarrant：00878（5位數ETF代碼）不應被誤判為權證');
+// 邊界情況：缺欄位或非字串型別不應拋出例外
+assertEqual(isWarrant({ code: '2330' }), false, 'isWarrant：缺少 name 欄位時不應拋出例外，且不誤判為權證');
+assertEqual(isWarrant({}), false, 'isWarrant：完全空物件時不應拋出例外');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

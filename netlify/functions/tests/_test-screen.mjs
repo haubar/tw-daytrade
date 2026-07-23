@@ -113,6 +113,24 @@ const mixedVolumeHistory = new Map([
 const firstPassResult = screenWatchlists(mixedMarketQuotes, mixedVolumeHistory, new Map(), { topN: 1 });
 const tpexCandidates = getTpexCandidateCodes(firstPassResult);
 
+// ---- 市場別候選股統計（診斷用，見階段30發現「FinMind 上櫃候選永遠是0檔」的排查過程）----
+// mixedMarketQuotes 裡有 1 檔上市 + 3 檔上櫃，全部都有歷史資料，應該都能進入候選池
+// （即使 topN=1 只有部分能進最終觀察榜，候選池本身的統計不受 topN 限制）。
+check(
+  firstPassResult.twseCandidatesWithHistory === 1,
+  'twseCandidatesWithHistory 應該正確統計出 1 檔上市候選股',
+  `實際: ${firstPassResult.twseCandidatesWithHistory}`
+);
+check(
+  firstPassResult.tpexCandidatesWithHistory === 3,
+  'tpexCandidatesWithHistory 應該正確統計出 3 檔上櫃候選股（不受 topN=1 影響，這是候選池統計，不是最終觀察榜筆數）',
+  `實際: ${firstPassResult.tpexCandidatesWithHistory}`
+);
+check(
+  firstPassResult.twseCandidatesWithHistory + firstPassResult.tpexCandidatesWithHistory === firstPassResult.totalCandidates,
+  '上市候選數 + 上櫃候選數 加總應該等於 totalCandidates，不能有候選股被漏算或重複算'
+);
+
 check(
   tpexCandidates.includes('TPEX_WEAK'),
   'getTpexCandidateCodes：空方觀察榜裡的上櫃股票（TPEX_WEAK）應該被抽出來',

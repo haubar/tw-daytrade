@@ -117,3 +117,31 @@ export function normalizeTpexRow(row) {
 export function isTradableRow(normalizedRow) {
   return normalizedRow.volume > 0 && normalizedRow.close > 0;
 }
+
+/**
+ * 判斷一筆正規化後的資料是不是權證（Warrant），而不是真正的股票——這個系統的四大因子
+ * （量能異常、跳空、相對強弱、法人買賣超）都是設計給「股票」用的，權證的價格行為完全是
+ * 另一套邏輯（連結標的、槓桿倍數、到期時間等），混進候選池會汙染排名，也是部署後
+ * 實際發現 TPEx 回傳「4644 檔」（真實上櫃股票約 800 檔）的根本原因。
+ *
+ * 判斷依據（依台股慣例）：
+ * 1. 股票代碼是 4 位數字（例如 2330、5347）；ETF 通常是 4~5 位數字（例如 0050、00878）。
+ *    權證的代碼固定是 6 位數字（例如 709205），這是最可靠的判斷依據。
+ * 2. 名稱通常帶有「購」（call）或「售」（put）加上券商簡稱跟序號，當作代碼判斷之外的
+ *    第二層防護（萬一代碼位數規則有例外，名稱特徵還能再擋一次）。
+ *
+ * 真實範例（部署後實際看到的資料）：709205「鈊象永豐63購01」、旺矽元大5A售03——
+ * 這兩筆的代碼都是 6 位數字，名稱也都符合「券商+編號+購/售+序號」的權證命名慣例。
+ *
+ * @param {{code: string, name: string}} normalizedRow
+ * @returns {boolean}
+ */
+export function isWarrant(normalizedRow) {
+  const code = String(normalizedRow.code ?? '');
+  const name = String(normalizedRow.name ?? '');
+
+  if (/^\d{6}$/.test(code)) return true;
+  if (/(購|售)\d{2}$/.test(name)) return true;
+
+  return false;
+}

@@ -65,6 +65,13 @@ export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy
   const candidates = allCandidates.filter((c) => c.hasHistory).map(({ hasHistory, ...rest }) => rest);
   const excludedNoHistory = allCandidates.length - candidates.length;
 
+  // 依市場別統計「有歷史資料、可以參與排名」的候選股數量。單純的 candidates.length 看不出
+  // 上市/上櫃各佔多少，第一次真實部署發現 FinMind 上櫃候選永遠是 0 檔時，這是關鍵的診斷資訊：
+  // 如果 tpexCandidatesWithHistory 是 0，代表上櫃股票根本沒有進入候選池（不管有沒有排進前 100 名
+  // 都排不上），問題出在「歷史資料沒有涵蓋到上櫃股票」這一層，而不是「排名不夠高」。
+  const twseCandidatesWithHistory = candidates.filter((c) => c.market === 'TWSE').length;
+  const tpexCandidatesWithHistory = candidates.filter((c) => c.market === 'TPEx').length;
+
   // 多方觀察榜：量能異常、跳空向上、相對強勢、法人買超，四者都是「越高越強」
   const longScored = computeCompositeScores(candidates, weights);
 
@@ -98,6 +105,8 @@ export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy
     longWatchlist: longScored.slice(0, topN),
     shortWatchlist,
     totalCandidates: candidates.length,
+    twseCandidatesWithHistory,
+    tpexCandidatesWithHistory,
     excludedNoHistory,
   };
 }

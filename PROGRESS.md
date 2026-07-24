@@ -1128,67 +1128,64 @@ README.md（測試數量更新）
 
 ---
 
-## 階段 32：發現並修正權證污染候選池的問題（本階段）
+## 階段 32：找到並修正 FinMind「全部無有效資料」的真正根因——TPEx 權證未過濾（本階段）
 
-**背景**：使用者直接指出階段 31 留下的疑問的答案——「好像抓到權證了」，並提供兩筆真實範例：`709205 鈊象永豐63購01`、`旺矽元大5A售03`。這解釋了階段 30/31 一直沒查清楚的「TPEx 4644 檔」異常數字，以及可能連帶解釋 FinMind 上櫃候選一直是 0 的問題（如果權證大量混入候選池、且權證的價格波動行為跟真股票完全不同邏輯，可能排擠掉真正股票的排名機會）。
+> **文件校正說明**：這個階段原本在 PROGRESS.md 裡被誤植成兩個內容重疊的獨立章節（都編號「階段 31」），一份側重使用者直接指出問題、另一份側重從 `debugInfo` 診斷結果反推根因，實際上是同一次修正的兩種敘述角度。這裡合併成一份，避免文件內容重複又誤導。
+
+**背景**：使用者部署階段 30 的成果後，回報新的診斷結果：`finmindTpexInstitutional` 顯示「查詢 20 檔上櫃候選，成功 0 檔，空資料 20 檔」，`debugInfo` 顯示查詢的 `stockId` 是像 `738755`、`738137`、`738189` 這種 6 位數字，不是台股正常的股票代碼格式。使用者也直接指出「好像抓到權證了」，並提供兩筆真實範例：`709205 鈊象永豐63購01`、`旺矽元大5A售03`。這解釋了階段 30/31 一直沒查清楚的「TPEx 4644 檔」異常數字，也解釋了 FinMind 上櫃候選一直是 0 的問題。
+
+**根因**：**這些是權證代碼，不是股票代碼**。台股權證的代碼固定 6 位數字，一般股票是 4 位數字、ETF 是 4~5 位數字。TPEx 官方「每日收盤行情」原始資料裡本來就混雜了權證（實際部署觀察到 TPEx 回傳「4644 檔」，遠超過真實上櫃股票約 800 檔的數量級，差額就是混入的權證），而 `getTpexCandidateCodes` 抽取候選名單時沒有先過濾掉這些權證，導致 FinMind 被拿去查詢根本不是股票、也不存在對應法人買賣資料的「代碼」，20 檔全部落空。
+
+**排查過程中的意外發現**：檢查工作目錄時發現，修正這個問題所需的 `isWarrant` 函式（以及 `scan.mjs`／`fetch-daily-quotes.mjs` 對它的套用）已經存在於本機，但從未真正交付／提交過——這是先前某次工作階段做的修正，留在本機但沒有送達使用者，導致部署到 Netlify 的版本一直沒有這個過濾邏輯。這次一併整理、驗證、交付，避免類似「本機有修正但沒送達」的狀況再發生。
 
 **判斷依據**：真實股票代碼是 4 位數字（例如 `2330`、`5347`），ETF 是 4~5 位數字（例如 `0050`、`00878`），權證固定是 6 位數字（例如 `709205`）；名稱上權證也有清楚的命名慣例（券商簡稱＋編號＋「購」或「售」＋序號）。兩個條件都用上，代碼判斷為主、名稱判斷為輔助防護。
 
 **完成事項**：
-1. `normalize.mjs` 新增 `isWarrant(normalizedRow)`：純函式，依代碼位數（6位數字）跟名稱關鍵字（「購」／「售」+2位數序號）判斷是否為權證
+1. `normalize.mjs` 新增 `isWarrant(normalizedRow)`：純函式，依代碼位數（`/^\d{6}$/`，6 位數字）跟名稱特徵（`/(購|售)\d{2}$/`，例如「鈊象永豐63購01」）雙重判斷是否為權證
 2. `scan.mjs` 的 `fetchTodayTwseQuotes`／`fetchTodayTpexQuotes` 都加上 `.filter(q => !isWarrant(q))`——雖然這次異常數字是在 TPEx 端發現的，但 TWSE 的 `STOCK_DAY_ALL` 理論上也可能混有上市權證，兩邊一併處理，不只挑出問題的那一邊修
 3. `fetch-daily-quotes.mjs`（除錯用端點）同步套用，並在回應加上 `warrantCount` 欄位，方便之後快速確認過濾生效、以及知道到底濾掉了多少筆
-4. 測試：`_test-fetch-daily-quotes.mjs` 新增 7 個案例，**直接使用使用者提供的兩筆真實範例**驗證，加上真實股票（4位數）、ETF（5位數）不會被誤判、以及缺欄位時的邊界情況
-
-**驗證方式**：`npm run test` **193 個測試案例，全數通過**；esbuild 打包 4 個 Function 全部成功；`npm run build` 成功
-
-**已知未完成 / 待驗證**：
-- 過濾後 `dataSourceStatus.tpex` 的實際檔數是否落回合理範圍（預期應該從 4644 降到接近 800），需要下次部署確認
-- 過濾權證後，`tpexCandidatesWithHistory`（階段31新增的診斷欄位）是否終於出現非零數字，是接下來最關鍵的驗證點——如果權證污染真的是 FinMind 候選一直是 0 的主因，這次應該能看到改善
-- 判斷規則（6位數代碼、「購」／「售」+序號）是依台股慣例寫的，沒有窮舉驗證過所有權證/牛熊證/展延型權證等變體是否都符合這個模式，如果之後發現有漏網之魚，需要再補規則
-- Part 2（分點資料）依然完全尚未評估
-
-**產出檔案（本階段全部異動，尚未 commit）**：
-```
-netlify/functions/lib/normalize.mjs（新增 isWarrant）
-netlify/functions/scan.mjs（套用權證過濾）
-netlify/functions/fetch-daily-quotes.mjs（套用權證過濾，新增 warrantCount 欄位）
-netlify/functions/tests/_test-fetch-daily-quotes.mjs（新增 7 個測試案例）
-README.md（已知限制更新）
-```
-
----
-
-## 階段 31：找到 FinMind「全部無有效資料」的真正根因——TPEx 權證未過濾（本階段）
-
-**背景**：使用者部署階段 30 的成果後，回報新的診斷結果：`"finmindTpexInstitutional": "⚠ 全部無有效資料（查詢 20 檔上櫃候選，成功 0 檔，空資料 20 檔）| 診斷樣本: [{"stockId":"738755","rowCount":0,"hasToken":true,"error":null}, ...]"`。階段 30 新增的 `debugInfo` 診斷機制這次真正發揮作用，直接看出關鍵線索：查詢的 `stockId` 是 6 位數字（`738755`、`738137`、`738189`），不是台股正常的股票代碼格式。
-
-**根因**：**這些是權證代碼，不是股票代碼**。台股權證的代碼固定 6 位數字，一般股票是 4 位數字、ETF 是 4~5 位數字。TPEx 官方「每日收盤行情」原始資料裡本來就混雜了權證（實際部署曾觀察到 TPEx 回傳「4644 檔」，遠超過真實上櫃股票約 800 檔的數量級，差額就是混入的權證），而 `getTpexCandidateCodes` 抽取候選名單時沒有先過濾掉這些權證，導致 FinMind 被拿去查詢根本不是股票、也不存在對應法人買賣資料的「代碼」，20 檔全部落空。
-
-**排查過程中的意外發現**：檢查 git 歷史時發現，修正這個問題所需的 `isWarrant` 函式（以及 `scan.mjs`／`fetch-daily-quotes.mjs` 對它的套用）**已經存在於本機工作目錄，但從未被 commit 過**——這是先前某次工作階段做的修正，留在本機沙盒裡但沒有真正交付給使用者，導致部署到 Netlify 的版本一直沒有這個過濾邏輯。這次順勢把它跟其他未提交的變更一併整理、驗證、交付，避免類似的「本機有修正但沒送達」狀況再發生。
-
-**完成事項**：
-1. `normalize.mjs` 新增 `isWarrant(normalizedRow)`：依代碼位數（`/^\d{6}$/`，6 位數字）跟名稱特徵（`/(購|售)\d{2}$/`，例如「鈊象永豐63購01」）雙重判斷是否為權證
-2. `scan.mjs`：`fetchTodayTwseQuotes`／`fetchTodayTpexQuotes` 都套用 `.filter((q) => !isWarrant(q))`——雖然這次真實發現的異常是在 TPEx，但 TWSE 上市權證理論上也可能混在 `STOCK_DAY_ALL` 回應裡，兩邊一併處理
-3. `fetch-daily-quotes.mjs`（既有的除錯端點）同步加上 `warrantCount` 欄位，方便之後確認過濾掉了幾檔
 4. `screen.mjs` 新增 `twseCandidatesWithHistory`／`tpexCandidatesWithHistory` 診斷欄位：分別統計上市/上櫃「通過歷史資料檢查、可以參與排名」的候選股數量，方便之後如果再遇到「上櫃候選是 0」，能立刻分辨是「上櫃股票根本沒進候選池」還是「排名不夠高但確實有進候選池」
+5. 測試：`_test-fetch-daily-quotes.mjs` 新增 7 個案例，**直接使用使用者提供的兩筆真實範例**驗證，加上真實股票（4位數）、ETF（5位數）不會被誤判、以及缺欄位時的邊界情況
 
 **驗證方式**：直接用真實觸發問題的代碼（`738755`、`738137`）單獨測試 `isWarrant`，確認正確判定為權證（`true`），正常股票代碼（`5347`）正確判定為非權證（`false`）；`npm run test` **193 個測試案例，全數通過**；esbuild 打包 4 個 Function 全部成功；`npm run build` 成功
 
 **已知未完成 / 待驗證**：
-- 這次修正完全沒辦法在這個環境用真實 TPEx 請求驗證「過濾後上櫃候選池會不會正確涵蓋到正常股票」，需要使用者部署後重新觸發 `/scan`，確認 `dataSourceStatus.finmindTpexInstitutional` 這次能不能查到真正有效的法人資料（而不是「空資料」或「查無此代碼」）
-- `isWarrant` 的判斷規則（6 位數字＝權證）是依台股慣例寫的經驗法則，不是官方明文規格，如果之後遇到例外情況（例如某些代碼位數規則有特例）需要再調整
+- 過濾後 `dataSourceStatus.tpex` 的實際檔數是否落回合理範圍（預期應該從 4644 降到接近 800），需要下次部署確認
+- 過濾權證後，`tpexCandidatesWithHistory` 是否終於出現非零數字，是接下來最關鍵的驗證點——如果權證污染真的是 FinMind 候選一直是 0 的主因，這次應該能看到改善
+- 判斷規則（6位數代碼、「購」／「售」+序號）是依台股慣例寫的，沒有窮舉驗證過所有權證/牛熊證/展延型權證等變體是否都符合這個模式，如果之後發現有漏網之魚，需要再補規則
 - Part 2（`TaiwanStockTradingDailyReport` 分點資料）依然完全尚未評估
 
-**產出檔案（本階段全部異動，先前已在本機但未提交，這次一併整理提交，尚未 commit）**：
+**產出檔案（本階段全部異動）**：
 ```
 netlify/functions/lib/normalize.mjs（新增 isWarrant）
-netlify/functions/scan.mjs（套用 isWarrant 過濾）
-netlify/functions/fetch-daily-quotes.mjs（新增 warrantCount 診斷欄位）
+netlify/functions/scan.mjs（套用權證過濾）
+netlify/functions/fetch-daily-quotes.mjs（套用權證過濾，新增 warrantCount 欄位）
 netlify/functions/lib/screen.mjs（新增 twseCandidatesWithHistory／tpexCandidatesWithHistory）
 netlify/functions/lib/finmind.mjs（上一輪 emptyStockIds／debugInfo，一併整理提交）
-netlify/functions/tests/_test-fetch-daily-quotes.mjs（更新）
+netlify/functions/tests/_test-fetch-daily-quotes.mjs（新增 7 個測試案例）
 netlify/functions/tests/_test-finmind.mjs（上一輪新增案例）
 netlify/functions/tests/_test-screen.mjs（更新）
-README.md（更新 FinMind 診斷說明）
+README.md（已知限制、FinMind 診斷說明更新）
+```
+
+---
+
+## 階段 33：清理殘留的重複測試檔案與死程式碼（本階段）
+
+**背景**：階段 29/30 的紀錄聲稱已用 `git rm` 刪除頂層重複的 `_test-*.mjs`（含孤兒檔案 `_test-market-index.mjs`）與死程式碼 `lib/csv.mjs`，但實際檢查 repo 發現這些檔案從未被真正移除，只是新版本（`tests/` 子資料夾）被新增上去、新舊並存。這代表階段 29 描述過的 Netlify build 錯誤（頂層 `_test-market-index.mjs` 的 top-level await 觸發 `Top-level await is currently not supported with the "cjs" output format`）會再次發生。
+
+**完成事項**：
+1. 刪除 `netlify/functions/` 頂層全部 19 個 `_test-*.mjs`（含孤兒檔案 `_test-market-index.mjs`）
+2. 刪除 `netlify/functions/lib/csv.mjs`（死程式碼，只有自己的測試在用，且該測試也已在階段 29 從 `tests/` 移除）
+3. `package.json` 測試指令原本就指向 `tests/` 子資料夾，不受影響
+
+**驗證方式**：
+- `npm run test`：**193 個測試案例，全數通過**
+- 用 `esbuild` 直接打包 4 個真正的頂層 Function（`scan.mjs`／`backfill-history.mjs`／`latest.mjs`／`fetch-daily-quotes.mjs`），確認不再出現任何錯誤
+- `npm run build`：Vite 前端打包成功
+
+**產出檔案（本階段全部異動）**：
+```
+已刪除：netlify/functions/_test-*.mjs（19 個，含孤兒檔 _test-market-index.mjs）
+已刪除：netlify/functions/lib/csv.mjs
 ```

@@ -1,7 +1,7 @@
 // src/utils/_test-filterWatchlist.js
 // 執行方式：npm run test:filter-watchlist
 
-import { filterWatchlist, getPriceBand, getPriceMoveForTicks, isFilterActive, isPriceLimitLocked } from './filterWatchlist.js';
+import { filterWatchlist, getPriceBand, getPriceMoveForTicks, isFilterActive, isPriceLimitLocked, DEFAULT_MIN_VOLUME_LOTS } from './filterWatchlist.js';
 
 let passed = 0;
 let failed = 0;
@@ -94,6 +94,18 @@ assertEqual(
   filterWatchlist(limitLockedItems, {}).map((i) => i.code),
   ['G'],
   '鎖漲停(E)、鎖跌停(F) 應固定被排除，即使沒有設定任何篩選條件；未鎖死的強勢股(G)應保留'
+);
+
+// ---- 最低流動性門檻（App.vue 預設帶入 DEFAULT_MIN_VOLUME_LOTS，這裡驗證常數本身跟 filterWatchlist 的搭配行為）----
+assertEqual(DEFAULT_MIN_VOLUME_LOTS, 100, 'DEFAULT_MIN_VOLUME_LOTS 預設應為 100 張');
+const liquidityItems = [
+  { code: 'H', close: 50, volume: 150000, changePercent: 2 }, // 150 張，符合 100 張門檻
+  { code: 'I', close: 50, volume: 50000, changePercent: 2 }, // 50 張，低於 100 張門檻
+];
+assertEqual(
+  filterWatchlist(liquidityItems, { minVolume: DEFAULT_MIN_VOLUME_LOTS * 1000 }).map((i) => i.code),
+  ['H'],
+  '套用預設最低流動性門檻（100張）時，成交量不足的股票(I)應被過濾掉'
 );
 
 // ---- 價格帶操作參考 ----

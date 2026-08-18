@@ -1,7 +1,7 @@
 // src/utils/_test-filterWatchlist.js
 // 執行方式：npm run test:filter-watchlist
 
-import { filterWatchlist, getPriceBand, getPriceMoveForTicks, isFilterActive } from './filterWatchlist.js';
+import { filterWatchlist, getPriceBand, getPriceMoveForTicks, isFilterActive, isPriceLimitLocked, DEFAULT_MIN_VOLUME_LOTS } from './filterWatchlist.js';
 
 let passed = 0;
 let failed = 0;
@@ -78,6 +78,35 @@ assertEqual(isFilterActive({}), false, 'isFilterActive：空物件應該回傳 f
 assertEqual(isFilterActive({ minPrice: null, maxPrice: null, minVolume: null, minGainPercent: null }), false, 'isFilterActive：全部是 null 應該回傳 false');
 assertEqual(isFilterActive({ minPrice: 10 }), true, 'isFilterActive：有設定任一條件應該回傳 true');
 assertEqual(isFilterActive(null), false, 'isFilterActive：傳入 null 不應該拋出例外，應該回傳 false');
+
+// ---- 漲停/跌停鎖死股票：固定排除，不受「清除篩選」影響 ----
+assertEqual(isPriceLimitLocked(9.9), true, '9.9% 應判定為鎖漲停');
+assertEqual(isPriceLimitLocked(-9.9), true, '-9.9% 應判定為鎖跌停');
+assertEqual(isPriceLimitLocked(9.5), true, '剛好 9.5%（門檻值）應判定為鎖死');
+assertEqual(isPriceLimitLocked(9.4), false, '9.4% 尚未到門檻，不應判定為鎖死');
+assertEqual(isPriceLimitLocked(8.5), false, '8.5% 只是強勢，不算鎖死');
+const limitLockedItems = [
+  { code: 'E', close: 50, volume: 1000000, changePercent: 9.87 }, // 鎖漲停
+  { code: 'F', close: 30, volume: 800000, changePercent: -9.91 }, // 鎖跌停
+  { code: 'G', close: 60, volume: 500000, changePercent: 9.2 }, // 強勢但未鎖死
+];
+assertEqual(
+  filterWatchlist(limitLockedItems, {}).map((i) => i.code),
+  ['G'],
+  '鎖漲停(E)、鎖跌停(F) 應固定被排除，即使沒有設定任何篩選條件；未鎖死的強勢股(G)應保留'
+);
+
+// ---- 最低流動性門檻（App.vue 預設帶入 DEFAULT_MIN_VOLUME_LOTS，這裡驗證常數本身跟 filterWatchlist 的搭配行為）----
+assertEqual(DEFAULT_MIN_VOLUME_LOTS, 100, 'DEFAULT_MIN_VOLUME_LOTS 預設應為 100 張');
+const liquidityItems = [
+  { code: 'H', close: 50, volume: 150000, changePercent: 2 }, // 150 張，符合 100 張門檻
+  { code: 'I', close: 50, volume: 50000, changePercent: 2 }, // 50 張，低於 100 張門檻
+];
+assertEqual(
+  filterWatchlist(liquidityItems, { minVolume: DEFAULT_MIN_VOLUME_LOTS * 1000 }).map((i) => i.code),
+  ['H'],
+  '套用預設最低流動性門檻（100張）時，成交量不足的股票(I)應被過濾掉'
+);
 
 // ---- 價格帶操作參考 ----
 assertEqual(getPriceBand(445.5), { min: 370, max: 500, profitTicks: 3 }, '445.5 元應套用 370~500 元、獲利參考 3 檔');

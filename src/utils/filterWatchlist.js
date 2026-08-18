@@ -4,10 +4,32 @@
 // 核心邏輯獨立出來，才能用簡單的 node 直接測試，不用架一個瀏覽器/元件測試環境）。
 //
 // 篩選條件裡任何值是 null／undefined，代表「這個條件不限制」。
-// 千元以上的股票則是這個當沖參考工具的固定排除條件，不會因為按下
-// 「清除篩選」而重新出現在榜單中。
+// 千元以上的股票、以及當日已鎖漲停或跌停的股票，是這個當沖參考工具的固定排除條件，
+// 不會因為按下「清除篩選」而重新出現在榜單中。
 
 export const HIGH_PRICE_STOCK_LIMIT = 1000;
+
+// 系統預設的最低流動性門檻（張）。使用者可以透過 FilterPanel 調整或按「清除篩選」拿掉這個限制，
+// 這跟 PRICE_LIMIT_THRESHOLD_PERCENT／HIGH_PRICE_STOCK_LIMIT 那種「不可調整的固定排除」不同——
+// 這裡只是一個「建議起始值」，避免使用者一打開頁面就看到成交量小到隔天可能買不到/賣不掉的股票，
+// 但仍保留使用者自行選擇要不要看冷門股的空間。見《後續修改清單》P3「加入最低流動性門檻」。
+export const DEFAULT_MIN_VOLUME_LOTS = 100;
+
+// 台股單日漲跌幅限制為前一日收盤價的 ±10%，但實際鎖漲跌停價會依報價檔距（getStockTickSize）
+// 四捨五入，所以真實出現的百分比通常落在 9.8%~10.0% 之間，很少低於 9.5%。用 9.5% 當門檻，
+// 足以抓到真正鎖死的股票，也不會誤判「單純漲跌很多但還能成交」的強勢/弱勢股。
+export const PRICE_LIMIT_THRESHOLD_PERCENT = 9.5;
+
+/**
+ * 判斷是否為當日已鎖漲停或跌停的股票——這類股票隔天開盤前無法得知能否成交
+ * （漲停可能沒有賣單、跌停可能沒有買單），當沖操作上等於「進不去」，
+ * 出現在觀察榜裡沒有實際操作意義，見《後續修改清單》P3「當沖實務風控」。
+ * @param {number} changePercent
+ * @returns {boolean}
+ */
+export function isPriceLimitLocked(changePercent) {
+  return Math.abs(changePercent) >= PRICE_LIMIT_THRESHOLD_PERCENT;
+}
 
 // 使用者提供的價格帶，以及各帶達到參考獲利所需上跳的報價檔數。
 export const PRICE_BANDS = [
@@ -78,6 +100,7 @@ export function filterWatchlist(items, filters) {
 
   return items.filter((item) => {
     if (item.close >= HIGH_PRICE_STOCK_LIMIT) return false;
+    if (isPriceLimitLocked(item.changePercent)) return false;
     if (minPrice != null && item.close < minPrice) return false;
     if (maxPrice != null && item.close > maxPrice) return false;
     if (minVolume != null && item.volume < minVolume) return false;

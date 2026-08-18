@@ -50,6 +50,12 @@ function profitReference(price) {
           <span class="shrink-0 font-mono text-[0.85rem] text-mute">{{ item.code }}</span>
           <span class="overflow-hidden text-ellipsis whitespace-nowrap font-medium">{{ item.name }}</span>
           <Badge :label="item.market === 'TWSE' ? '上市' : '上櫃'" />
+          <Badge
+            v-if="item.institutionalDataMissing"
+            label="法人資料暫缺"
+            variant="notice"
+            title="這檔股票當日沒有三大法人買賣超資料，法人買賣超因子以中性值（0分）計入總分，總分僅反映其餘三個因子"
+          />
         </span>
 
         <span class="flex flex-col items-end font-mono leading-tight">

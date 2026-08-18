@@ -72,6 +72,22 @@ check(
   '多方觀察榜每一筆都應該有 institutionalContribution 欄位'
 );
 
+// ---- institutionalDataMissing：區分「中性 0 分」跟「真的沒有法人資料」----
+// STRONG 在 institutionalNetBuy 裡有資料（即使剛好是 0 也一樣），institutionalDataMissing 應為 false；
+// FLAT 完全沒放進 institutionalNetBuy，institutionalDataMissing 應為 true。
+const strongCandidate = result.longWatchlist.find((c) => c.code === 'STRONG');
+check(
+  strongCandidate.institutionalDataMissing === false,
+  'STRONG 有法人資料，institutionalDataMissing 應為 false',
+  `實際: ${strongCandidate.institutionalDataMissing}`
+);
+const flatCandidate = [...result.longWatchlist, ...result.shortWatchlist].find((c) => c.code === 'FLAT');
+check(
+  flatCandidate === undefined || flatCandidate.institutionalDataMissing === true,
+  'FLAT 沒有法人資料，institutionalDataMissing 應為 true',
+  `實際: ${flatCandidate && flatCandidate.institutionalDataMissing}`
+);
+
 // ---- marketChangePercent 覆蓋功能（真實 TAIEX 指數）----
 // 沒有傳 marketChangePercent 時，應該用估計值（前面的測試已經驗證過是個數字）；
 // 有明確傳入時，應該直接採用那個值，不會再去算估計值。
@@ -159,6 +175,68 @@ check(
 check(
   JSON.stringify(getTpexCandidateCodes(undefined)) === '[]',
   'getTpexCandidateCodes：傳入 undefined 時應安全回傳空陣列，不拋出例外'
+);
+
+// ---- 相對強弱因子多日化（對應《後續修改清單》P1「相對強弱因子只用單日資料」）----
+// 沒有提供 changeHistory / marketChangeHistory 時，應該優雅退回單日版本，不影響既有行為
+// （前面的測試都沒有帶這兩個 options，能全部通過就已經證明退回機制正常）。
+
+const rsQuotes = [
+  { code: 'A', name: 'A股', market: 'TWSE', open: 101, high: 102, low: 100, close: 101, volume: 20000, change: 1 }, // prevClose=100, +1%
+];
+const rsVolumeHistory = new Map([['A', [10000, 10000]]]);
+
+// 今天：個股+1% - 大盤+0.5% = 相對強弱 +0.5%
+// changeHistory：過去兩天個股都是 +5%，marketChangeHistory：過去兩天大盤都是 0%
+// 多日版本應該是 [今天+0.5, 過去1: 5-0=5, 過去2: 5-0=5] 平均 = (0.5+5+5)/3 ≈ 3.5
+const resultMultiDay = screenWatchlists(rsQuotes, rsVolumeHistory, new Map(), {
+  marketChangePercent: 0.5,
+  changeHistory: new Map([['A', [5, 5]]]),
+  marketChangeHistory: [0, 0],
+});
+const candidateA = resultMultiDay.longWatchlist.find((c) => c.code === 'A');
+check(
+  Math.abs(candidateA.relativeStrength - 3.5) < 0.0001,
+  '有提供 changeHistory/marketChangeHistory 時，相對強弱應該用多日平均，而不是只看今天',
+  `實際: ${candidateA.relativeStrength}`
+);
+check(
+  candidateA.relativeStrengthWindowDays === 3,
+  'relativeStrengthWindowDays 應為 3（今天+過去2天）',
+  `實際: ${candidateA.relativeStrengthWindowDays}`
+);
+
+// 沒有提供 changeHistory/marketChangeHistory 時，應該退回單日版本：+1% - 0.5% = +0.5%
+const resultSingleDay = screenWatchlists(rsQuotes, rsVolumeHistory, new Map(), { marketChangePercent: 0.5 });
+const candidateASingle = resultSingleDay.longWatchlist.find((c) => c.code === 'A');
+check(
+  Math.abs(candidateASingle.relativeStrength - 0.5) < 0.0001,
+  '沒有提供多日歷史資料時，應退回單日相對強弱（+1% - 0.5% = +0.5%）',
+  `實際: ${candidateASingle.relativeStrength}`
+);
+check(
+  candidateASingle.relativeStrengthWindowDays === 1,
+  '沒有多日歷史資料時，relativeStrengthWindowDays 應為 1（代表退回單日版本）',
+  `實際: ${candidateASingle.relativeStrengthWindowDays}`
+);
+
+// changeHistory 跟 marketChangeHistory 天數不一致時，應該取兩者較短的長度配對，不能對錯天
+const resultMismatch = screenWatchlists(rsQuotes, rsVolumeHistory, new Map(), {
+  marketChangePercent: 0.5,
+  changeHistory: new Map([['A', [5, 5, 5]]]), // 個股有 3 天歷史
+  marketChangeHistory: [0], // 大盤只有 1 天歷史
+});
+const candidateAMismatch = resultMismatch.longWatchlist.find((c) => c.code === 'A');
+// 應該只用 1 天配對：[今天+0.5, 過去1: 5-0=5] 平均 = 2.75
+check(
+  Math.abs(candidateAMismatch.relativeStrength - 2.75) < 0.0001,
+  '個股歷史跟大盤歷史天數不一致時，應該取較短的長度配對，不使用對不上天的資料',
+  `實際: ${candidateAMismatch.relativeStrength}`
+);
+check(
+  candidateAMismatch.relativeStrengthWindowDays === 2,
+  '天數不一致時，relativeStrengthWindowDays 應反映實際配對到的天數（今天+1天=2）',
+  `實際: ${candidateAMismatch.relativeStrengthWindowDays}`
 );
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);

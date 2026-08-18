@@ -4,7 +4,7 @@ import StatusBar from './components/StatusBar.vue';
 import WatchlistPanel from './components/WatchlistPanel.vue';
 import FilterPanel from './components/FilterPanel.vue';
 import { sampleScanResult } from './sampleData.js';
-import { filterWatchlist, isFilterActive } from './utils/filterWatchlist.js';
+import { filterWatchlist, isFilterActive, DEFAULT_MIN_VOLUME_LOTS } from './utils/filterWatchlist.js';
 
 const result = ref(null);
 const isSample = ref(false);
@@ -14,7 +14,11 @@ const isLoading = ref(true);
 // 篩選條件：股價區間、最小成交量、最小漲跌幅度。null 代表該條件不限制。
 // 這是純前端的顯示篩選，不會重新觸發後端計算，也不會影響分數本身
 // （分數的「相對強弱」「百分位排名」都是用全市場候選池算出來的，篩選只是決定要不要顯示這一列）。
-const filters = reactive({ minPrice: null, maxPrice: null, minVolume: null, minGainPercent: null });
+//
+// minVolume 預設不是 null，而是 DEFAULT_MIN_VOLUME_LOTS（100 張）：一開始就給使用者一個
+// 合理的流動性門檻，避免預設就看到成交量小到隔天可能買不到/賣不掉的股票；使用者仍可以自行
+// 調整或按「清除篩選」拿掉這個限制。
+const filters = reactive({ minPrice: null, maxPrice: null, minVolume: DEFAULT_MIN_VOLUME_LOTS * 1000, minGainPercent: null });
 
 const filteredLongWatchlist = computed(() =>
   result.value ? filterWatchlist(result.value.longWatchlist, filters) : []

@@ -9,8 +9,9 @@
 // - 跳過週六日（見 trading-day.mjs），只找交易日
 // - 跳過已經存在 Blobs 累積庫裡的日期，不重複補——每次執行都是「往前多補幾天新的」，
 //   而不是每次都補同樣的最近幾天（這樣連續按好幾次也不會有幫助）
-// - 目標是補到 3 天「新的」交易日資料，如果候選日期裡有些已經補過、有些抓取失敗，
-//   會自動往更早的日期找，直到湊滿 3 天或候選清單用完為止
+// - 目標是補到 TARGET_NEW_DAYS 天「新的」交易日資料（跟 scan.mjs 的窗口天數一致，
+//   見 volume-archive.mjs 的 DEFAULT_HISTORY_WINDOW_DAYS），如果候選日期裡有些已經補過、
+//   有些抓取失敗，會自動往更早的日期找，直到湊滿目標天數或候選清單用完為止
 // - **分批發送、每批 3 個請求**：實測發現一次平行發 15 個請求給 TWSE 全部都逾時
 //   （AbortSignal timeout），研判是 TWSE 對同一來源的併發請求數有限制。改成一批只發 3 個，
 //   湊滿 3 天新資料就提早停止，不需要的批次不會發出去，兼顧成功率跟速度
@@ -20,10 +21,15 @@
 
 import { fetchOneDay } from './lib/history.mjs';
 import { getPastTradingDayCandidates, formatDateParam } from './lib/trading-day.mjs';
-import { appendDailySnapshot, getArchivedDates } from './lib/volume-archive.mjs';
+import { appendDailySnapshot, getArchivedDates, DEFAULT_HISTORY_WINDOW_DAYS } from './lib/volume-archive.mjs';
+import { computeChangePercent, computeMarketChangeProxy } from './lib/factors.mjs';
 
-const TARGET_NEW_DAYS = 3;
-const MAX_CANDIDATE_ATTEMPTS = 15; // 候選交易日的搜尋範圍上限，避免因為一直跳過已存在的天數而無限找下去
+// 補資料的目標天數，跟 scan.mjs 實際使用的窗口天數保持一致（見 volume-archive.mjs 的
+// DEFAULT_HISTORY_WINDOW_DAYS 說明：原本 3 天拉長到 5 天，降低單一天異常量能的干擾）。
+const TARGET_NEW_DAYS = DEFAULT_HISTORY_WINDOW_DAYS;
+// 候選交易日的搜尋範圍上限：目標天數變多了，候選範圍也一併拉大，避免因為跳過已存在的天數
+// 或抓取失敗而湊不滿目標天數（原本 15，對應目標 3 天；現在目標 5 天，抓寬鬆一點的安全邊際）。
+const MAX_CANDIDATE_ATTEMPTS = 20;
 const BATCH_SIZE = 3; // 每批平行發送的請求數，避免一次發太多被 TWSE 擋下來
 
 /**
@@ -114,7 +120,19 @@ export default async (req) => {
     }
 
     for (const { date, quotes } of newDays) {
-      await appendDailySnapshot(date, quotes);
+      // 補歷史資料時，也一併補上每檔股票當天的漲跌幅、跟當天的大盤漲跌幅估計值，
+      // 讓多日相對強弱因子（見 factors.mjs 的 computeMultiDayRelativeStrength）可以透過補資料
+      // 加速暖機，不用像 scan.mjs 自然累積那樣要等好幾個交易日。這裡沒有真實 TAIEX 歷史指數
+      // 可查（只有今天的即時 TAIEX，見 taiex.mjs），用 computeMarketChangeProxy 估計那天的大盤
+      // 漲跌幅——跟 scan.mjs 在沒有真實 TAIEX 時的退回邏輯是同一套公式，維持一致性。
+      const quotesWithChangePercent = quotes.map((q) => ({
+        ...q,
+        changePercent: computeChangePercent(q.change, q.close - q.change),
+      }));
+      const marketChangePercentEstimate = computeMarketChangeProxy(quotes);
+      await appendDailySnapshot(date, quotesWithChangePercent, undefined, {
+        marketChangePercent: marketChangePercentEstimate,
+      });
     }
 
     return new Response(

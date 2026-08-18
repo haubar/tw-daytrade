@@ -16,7 +16,14 @@
 // 補強，再跑第二輪產生最終結果（見 lib/screen.mjs 的 getTpexCandidateCodes 說明）。
 
 import { normalizeTwseRow, normalizeTpexRow, isTradableRow, isWarrant } from './lib/normalize.mjs';
-import { getRecentVolumeHistory, appendDailySnapshot } from './lib/volume-archive.mjs';
+import {
+  getRecentVolumeHistory,
+  getRecentChangeHistory,
+  getRecentMarketChangeHistory,
+  appendDailySnapshot,
+  DEFAULT_HISTORY_WINDOW_DAYS,
+} from './lib/volume-archive.mjs';
+import { computeChangePercent, computeMarketChangeProxy } from './lib/factors.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
 import { fetchFinMindInstitutionalNetBuy } from './lib/finmind.mjs';
 import { fetchTaiexChangePercent } from './lib/taiex.mjs';
@@ -63,10 +70,12 @@ export default async (req) => {
     // 三個資料來源彼此獨立，全部平行發出。歷史資料現在是讀 Netlify Blobs 裡累積的紀錄
     // （見 volume-archive.mjs），不再現場跟 TWSE 要好幾天份資料——這是部署後實測發現的
     // 效能瓶頸，改成這樣之後，理論上每次執行只需要各資料來源各一次請求，速度快很多。
-    const [twseResult, tpexResult, historyResult, institutionalResult, taiexResult] = await Promise.allSettled([
+    const [twseResult, tpexResult, historyResult, changeHistoryResult, marketChangeHistoryResult, institutionalResult, taiexResult] = await Promise.allSettled([
       fetchTodayTwseQuotes(),
       fetchTodayTpexQuotes(),
-      getRecentVolumeHistory(3, todayDateStr),
+      getRecentVolumeHistory(DEFAULT_HISTORY_WINDOW_DAYS, todayDateStr),
+      getRecentChangeHistory(DEFAULT_HISTORY_WINDOW_DAYS, todayDateStr),
+      getRecentMarketChangeHistory(DEFAULT_HISTORY_WINDOW_DAYS, todayDateStr),
       fetchInstitutionalNetBuy(),
       fetchTaiexChangePercent(),
     ]);
@@ -79,6 +88,25 @@ export default async (req) => {
     if (todayQuotes.length === 0) {
       throw new Error('今日行情抓取失敗，TWSE 與 TPEx 皆無資料可用');
     }
+
+    // TAIEX 抓取失敗、或端點回應正常但解析不出資料（回傳 null），都優雅退回原本的估計值
+    // （computeMarketChangeProxy，見 screen.mjs），不會讓整個掃描失敗——大盤漲跌幅本來就只是
+    // 「相對強弱」因子的比較基準之一，不是關鍵路徑上的必要資料。
+    // 這段移到 appendDailySnapshot 之前，是因為存進歷史累積庫的「今天的大盤漲跌幅」需要用到
+    // 這個值（給明天的多日相對強弱因子當比較基準，見 volume-archive.mjs 的 getRecentMarketChangeHistory）。
+    let realTaiexChangePercent = null;
+    let taiexWarning = null;
+    if (taiexResult.status === 'fulfilled' && taiexResult.value !== null) {
+      realTaiexChangePercent = taiexResult.value;
+    } else if (taiexResult.status === 'fulfilled') {
+      taiexWarning = 'TAIEX 端點回應正常，但解析不出「發行量加權股價指數」這筆資料，改用估計值';
+    } else {
+      taiexWarning = `TAIEX 指數抓取失敗，改用估計值: ${taiexResult.reason.message}`;
+    }
+    // 沒有真實 TAIEX 時，存進歷史累積庫的大盤漲跌幅改用跟 screenWatchlists 同一套估計公式
+    // （computeMarketChangeProxy），確保「今天存進去給明天用的大盤數字」跟「今天實際拿來排名用的
+    // 大盤數字」是同一個值，不會兩邊對不上。
+    const marketChangePercentForArchive = realTaiexChangePercent ?? computeMarketChangeProxy(todayQuotes);
 
     // 把今天的資料存進 Blobs 累積庫，讓「明天」執行時可以讀到今天的資料當作歷史的一部分。
     // 如果今天是週六日（例如使用者手動觸發測試剛好選在週末），TWSE 端點還是會回傳「最近一個
@@ -97,7 +125,15 @@ export default async (req) => {
       archiveWarning = '現在還沒到台灣時間下午 2 點，盤後資料可能還沒確定下來，先不寫入歷史累積庫（可以晚一點再手動觸發一次，或等排程在 14:10 自動執行）';
     } else {
       try {
-        await appendDailySnapshot(todayDateStr, todayQuotes);
+        // 把每檔股票當日漲跌幅一併存進去，給明天的多日相對強弱因子用（見 factors.mjs 的
+        // computeMultiDayRelativeStrength、volume-archive.mjs 的 getRecentChangeHistory）。
+        const todayQuotesWithChangePercent = todayQuotes.map((q) => ({
+          ...q,
+          changePercent: computeChangePercent(q.change, q.close - q.change),
+        }));
+        await appendDailySnapshot(todayDateStr, todayQuotesWithChangePercent, undefined, {
+          marketChangePercent: marketChangePercentForArchive,
+        });
       } catch (e) {
         archiveWarning = `今日資料寫入歷史累積庫失敗（不影響本次結果，但明天的歷史資料會少這一天）: ${e.message}`;
       }
@@ -105,10 +141,17 @@ export default async (req) => {
 
     // getRecentVolumeHistory 內部如果連不到 Blobs 會整個 reject，這裡保守處理成「視為沒有歷史資料」，
     // 而不是讓整個 scan 跟著死掉——量能異常因子會全部是中性值，但其他三個因子還是能正常運作。
-    // 天數設定為 3 天：剛開始使用（或剛清空 Blobs 累積庫）的前幾天，累積天數不夠 3 天，
-    // 可以先用 backfill-history.mjs 手動補資料加速暖機。
+    // 天數設定為 DEFAULT_HISTORY_WINDOW_DAYS（見 volume-archive.mjs 的說明，原本 3 天拉長到 5 天，
+    // 降低單一天異常量能對均量基準的干擾）：剛開始使用（或剛清空 Blobs 累積庫）的前幾天，
+    // 累積天數不夠，可以先用 backfill-history.mjs 手動補資料加速暖機。
     const { volumeHistory, datesUsed } =
       historyResult.status === 'fulfilled' ? historyResult.value : { volumeHistory: new Map(), datesUsed: [] };
+
+    // 多日相對強弱因子的歷史資料。跟量能歷史一樣採優雅退化：讀取失敗就當作沒有歷史資料，
+    // screenWatchlists/buildCandidate 會自動退回單日版本的相對強弱（見 screen.mjs 的說明），
+    // 不會讓整個掃描失敗。
+    const changeHistory = changeHistoryResult.status === 'fulfilled' ? changeHistoryResult.value : new Map();
+    const marketChangeHistory = marketChangeHistoryResult.status === 'fulfilled' ? marketChangeHistoryResult.value : [];
 
     // 法人買賣超抓取失敗不應該讓整個掃描失敗——沒有這個因子還是可以用其他三個因子繼續產生結果，
     // 只是這次的結果會少一個訊號來源，這裡把「抓取失敗」跟「抓到但日期對不上」分開判斷。
@@ -126,19 +169,6 @@ export default async (req) => {
       institutionalWarning = `法人買賣超資料抓取失敗（本次結果的法人因子將全部視為中性）: ${institutionalResult.reason.message}`;
     }
 
-    // TAIEX 抓取失敗、或端點回應正常但解析不出資料（回傳 null），都優雅退回原本的估計值
-    // （computeMarketChangeProxy，見 screen.mjs），不會讓整個掃描失敗——大盤漲跌幅本來就只是
-    // 「相對強弱」因子的比較基準之一，不是關鍵路徑上的必要資料。
-    let realTaiexChangePercent = null;
-    let taiexWarning = null;
-    if (taiexResult.status === 'fulfilled' && taiexResult.value !== null) {
-      realTaiexChangePercent = taiexResult.value;
-    } else if (taiexResult.status === 'fulfilled') {
-      taiexWarning = 'TAIEX 端點回應正常，但解析不出「發行量加權股價指數」這筆資料，改用估計值';
-    } else {
-      taiexWarning = `TAIEX 指數抓取失敗，改用估計值: ${taiexResult.reason.message}`;
-    }
-
     // topN 拉到 100（原本 30）：前端要做成交量/股價/漲幅篩選，如果候選池只有 30 檔，
     // 篩一篩很容易剩沒幾檔可看，拉大候選池篩選才有意義。
     //
@@ -146,6 +176,8 @@ export default async (req) => {
     const firstPassResult = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, {
       topN: 100,
       marketChangePercent: realTaiexChangePercent ?? undefined,
+      changeHistory,
+      marketChangeHistory,
     });
 
     // 第二輪：從第一輪結果裡挑出「進了觀察榜的上櫃股票」，只對這些candidate額外查 FinMind 補強
@@ -172,6 +204,8 @@ export default async (req) => {
           result = screenWatchlists(todayQuotes, volumeHistory, mergedInstitutionalNetBuy, {
             topN: 100,
             marketChangePercent: realTaiexChangePercent ?? undefined,
+            changeHistory,
+            marketChangeHistory,
           });
         }
 
@@ -204,8 +238,14 @@ export default async (req) => {
           ? `ok (${institutionalNetBuy.size} 檔)${institutionalWarning ? ` ⚠ ${institutionalWarning}` : ''}`
           : `失敗: ${institutionalWarning}`,
         historyArchive: historyResult.status === 'fulfilled'
-          ? `ok（累積 ${datesUsed.length}/3 天，${datesUsed.length < 3 ? '尚未暖機完成，量能異常因子會偏向中性' : '天數足夠'}）${archiveWarning ? ` ⚠ ${archiveWarning}` : ''}`
+          ? `ok（累積 ${datesUsed.length}/${DEFAULT_HISTORY_WINDOW_DAYS} 天，${datesUsed.length < DEFAULT_HISTORY_WINDOW_DAYS ? '尚未暖機完成，量能異常因子會偏向中性' : '天數足夠'}）${archiveWarning ? ` ⚠ ${archiveWarning}` : ''}`
           : `失敗（本次量能異常因子將全部視為中性）: ${historyResult.reason?.message ?? '未知錯誤'}`,
+        // 多日相對強弱因子的暖機狀態，跟 historyArchive（量能異常因子）是分開累積的兩份資料，
+        // 剛升級的前幾天，即使量能歷史已經累積好幾天，相對強弱因子還是會先退回單日版本，
+        // 因為 changePercent／marketChangePercent 是這次升級後才開始存的，需要重新累積。
+        relativeStrengthWindow: marketChangeHistory.length > 0
+          ? `ok（累積 ${marketChangeHistory.length}/${DEFAULT_HISTORY_WINDOW_DAYS} 天，多日相對強弱因子已啟用）`
+          : '尚未累積到任何一天的多日資料，相對強弱因子暫時全部使用單日版本（這是這次升級後才開始存的資料，需要幾個交易日重新累積）',
         taiex: realTaiexChangePercent !== null ? 'ok（使用真實 TAIEX 指數）' : `改用估計值${taiexWarning ? ` ⚠ ${taiexWarning}` : ''}`,
         finmindTpexInstitutional: finmindStatus,
       },

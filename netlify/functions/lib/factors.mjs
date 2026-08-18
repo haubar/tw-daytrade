@@ -26,12 +26,46 @@ export function computeGapPercent(todayOpen, prevClose) {
 }
 
 /**
+ * 個股當日漲跌幅（%）：(當日收盤 - 前一日收盤) / 前一日收盤 × 100
+ * 抽成獨立函式，是因為這個算法原本在 screen.mjs 的 buildCandidate 裡寫一次，
+ * 現在 scan.mjs 要在寫入歷史累積庫之前，對同一批 quotes 再算一次同樣的東西
+ * （見 volume-archive.mjs 的多日相對強弱設計），避免同一個公式散落兩處各自維護一份。
+ */
+export function computeChangePercent(change, prevClose) {
+  if (!prevClose || prevClose <= 0) return 0;
+  return (change / prevClose) * 100;
+}
+
+/**
  * 相對大盤強弱勢（%）：個股當日漲跌幅 - 大盤當日漲跌幅
  * @param {number} stockChangePercent 個股漲跌幅（%），例如 3.2
  * @param {number} marketChangePercent 大盤漲跌幅（%）
  */
 export function computeRelativeStrength(stockChangePercent, marketChangePercent) {
   return stockChangePercent - marketChangePercent;
+}
+
+/**
+ * 多日相對強弱勢（%）：把「今天」跟「過去幾天」的單日相對強弱勢（個股當日漲跌幅 - 大盤當日
+ * 漲跌幅）取平均，用來取代只看單日的版本。
+ *
+ * 為什麼：單日相對強弱勢的雜訊很大——一檔股票今天剛好比大盤強 5%，可能只是當天隨機波動，
+ * 不代表它真的處於相對強勢的趨勢中。取多天平均可以稀釋單日雜訊，比較能反映「這檔股票
+ * 最近一段時間是不是持續比大盤強」，而不是「今天剛好比較強」。
+ *
+ * 用「每日相對強弱勢的算術平均」而不是「用起訖收盤價算出的真正累積報酬率」，是為了跟
+ * computeRelativeStrength（單日版本）維持同一套計算哲學一致，也讓「今天沒有歷史資料」
+ * 這種情況（新股、剛部署還沒累積夠天數）可以優雅地只用有的天數取平均，不需要用到
+ * 「起始價格」這種累積報酬率必須要有的额外資料。
+ *
+ * @param {number[]} dailyRelativeStrengths 每天的單日相對強弱勢，通常是 [今天, ...過去N天]，
+ *   缺資料的天數不應該放進這個陣列（由呼叫端先過濾），這裡只單純算平均
+ * @returns {number} 平均後的相對強弱勢；輸入為空陣列時回傳 0（沒有資料可用時視為中性）
+ */
+export function computeMultiDayRelativeStrength(dailyRelativeStrengths) {
+  const valid = dailyRelativeStrengths.filter((v) => typeof v === 'number' && Number.isFinite(v));
+  if (valid.length === 0) return 0;
+  return valid.reduce((sum, v) => sum + v, 0) / valid.length;
 }
 
 /**

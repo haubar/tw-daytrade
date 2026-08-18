@@ -1,7 +1,7 @@
 // netlify/functions/_test-volume-archive.mjs
 // 執行方式：npm run test:volume-archive
 
-import { appendDailySnapshot, getRecentVolumeHistory, getArchivedDates, DEFAULT_HISTORY_WINDOW_DAYS } from '../lib/volume-archive.mjs';
+import { appendDailySnapshot, getRecentVolumeHistory, getArchivedDates, getRecentChangeHistory, getRecentMarketChangeHistory, DEFAULT_HISTORY_WINDOW_DAYS } from '../lib/volume-archive.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -112,6 +112,42 @@ for (const [date, volume] of [
 const result8 = await getRecentVolumeHistory(DEFAULT_HISTORY_WINDOW_DAYS, null, store8);
 assertEqual(result8.datesUsed.length, 5, '窗口設為 DEFAULT_HISTORY_WINDOW_DAYS 時，應讀到 5 天資料（不再是舊的 3 天）');
 assertEqual(result8.volumeHistory.get('1101').length, 5, '單一股票的歷史成交量陣列長度應為 5');
+
+// ---- 測試 9：多日相對強弱功能——changePercent 與 marketChangePercent 的存取 ----
+// 對應《後續修改清單》P1「相對強弱因子只用單日資料」
+
+// 9a：新格式（帶 changePercent + marketChangePercent）應該能正確存取
+const store9 = createFakeStore();
+await appendDailySnapshot('2026-07-10', [{ code: '1101', volume: 1000, changePercent: 2.5 }], store9, { marketChangePercent: 0.8 });
+await appendDailySnapshot('2026-07-11', [{ code: '1101', volume: 1100, changePercent: -1.2 }], store9, { marketChangePercent: -0.3 });
+const changeHistory9 = await getRecentChangeHistory(5, null, store9);
+assertEqual(changeHistory9.get('1101'), [-1.2, 2.5], 'getRecentChangeHistory：應讀到兩天的 changePercent，新到舊排序');
+const marketHistory9 = await getRecentMarketChangeHistory(5, null, store9);
+assertEqual(marketHistory9, [-0.3, 0.8], 'getRecentMarketChangeHistory：應讀到兩天的大盤漲跌幅，新到舊排序');
+// 就算存了 changePercent，volumeHistory 的既有行為也不能被破壞
+const volumeHistory9 = await getRecentVolumeHistory(5, null, store9);
+assertEqual(volumeHistory9.volumeHistory.get('1101'), [1100, 1000], '存了 changePercent 之後，getRecentVolumeHistory 仍應正常運作，不受影響');
+
+// 9b：沒有帶 changePercent／marketChangePercent 的呼叫（舊呼叫端還沒升級）應該優雅處理
+const store10 = createFakeStore();
+await appendDailySnapshot('2026-07-12', [{ code: '2330', volume: 5000 }], store10); // 沒有第 4 個參數
+const changeHistory10 = await getRecentChangeHistory(5, null, store10);
+assertEqual(changeHistory10.has('2330'), false, '沒有提供 changePercent 時，getRecentChangeHistory 不應該把這檔股票這一天算進去');
+const marketHistory10 = await getRecentMarketChangeHistory(5, null, store10);
+assertEqual(marketHistory10, [], '沒有提供 marketChangePercent 時，getRecentMarketChangeHistory 應該跳過這一天');
+// volumeHistory 應該完全不受影響
+const volumeHistory10 = await getRecentVolumeHistory(5, null, store10);
+assertEqual(volumeHistory10.volumeHistory.get('2330'), [5000], '沒有 changePercent 時，volume 的讀取仍應正常');
+
+// 9c：真正的舊格式資料（部署前既有的 Blobs 資料，快照本身是「code -> 純數字」而不是物件）
+// 讀取端應該要能相容，不能因為升級後開始要求物件格式，就讓舊資料整批讀不到
+const store11 = createFakeStore();
+await store11.setJSON('snapshot:2026-07-13', { '1101': 800, '2330': 3000 }); // 手動模擬舊格式快照
+await store11.setJSON('index', ['2026-07-13']);
+const volumeHistory11 = await getRecentVolumeHistory(5, null, store11);
+assertEqual(volumeHistory11.volumeHistory.get('1101'), [800], '舊格式（純數字）快照的 volume 仍應正常讀取，不因升級後格式改變而讀不到');
+const changeHistory11 = await getRecentChangeHistory(5, null, store11);
+assertEqual(changeHistory11.has('1101'), false, '舊格式快照沒有 changePercent 可用，getRecentChangeHistory 應該跳過，而不是拋出例外');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

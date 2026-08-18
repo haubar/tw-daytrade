@@ -22,6 +22,7 @@
 import { fetchOneDay } from './lib/history.mjs';
 import { getPastTradingDayCandidates, formatDateParam } from './lib/trading-day.mjs';
 import { appendDailySnapshot, getArchivedDates, DEFAULT_HISTORY_WINDOW_DAYS } from './lib/volume-archive.mjs';
+import { computeChangePercent, computeMarketChangeProxy } from './lib/factors.mjs';
 
 // 補資料的目標天數，跟 scan.mjs 實際使用的窗口天數保持一致（見 volume-archive.mjs 的
 // DEFAULT_HISTORY_WINDOW_DAYS 說明：原本 3 天拉長到 5 天，降低單一天異常量能的干擾）。
@@ -119,7 +120,19 @@ export default async (req) => {
     }
 
     for (const { date, quotes } of newDays) {
-      await appendDailySnapshot(date, quotes);
+      // 補歷史資料時，也一併補上每檔股票當天的漲跌幅、跟當天的大盤漲跌幅估計值，
+      // 讓多日相對強弱因子（見 factors.mjs 的 computeMultiDayRelativeStrength）可以透過補資料
+      // 加速暖機，不用像 scan.mjs 自然累積那樣要等好幾個交易日。這裡沒有真實 TAIEX 歷史指數
+      // 可查（只有今天的即時 TAIEX，見 taiex.mjs），用 computeMarketChangeProxy 估計那天的大盤
+      // 漲跌幅——跟 scan.mjs 在沒有真實 TAIEX 時的退回邏輯是同一套公式，維持一致性。
+      const quotesWithChangePercent = quotes.map((q) => ({
+        ...q,
+        changePercent: computeChangePercent(q.change, q.close - q.change),
+      }));
+      const marketChangePercentEstimate = computeMarketChangeProxy(quotes);
+      await appendDailySnapshot(date, quotesWithChangePercent, undefined, {
+        marketChangePercent: marketChangePercentEstimate,
+      });
     }
 
     return new Response(

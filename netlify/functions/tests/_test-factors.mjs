@@ -4,7 +4,9 @@
 import {
   computeVolumeRatio,
   computeGapPercent,
+  computeChangePercent,
   computeRelativeStrength,
+  computeMultiDayRelativeStrength,
   computeInstitutionalRatio,
   computeMarketChangeProxy,
   toPercentileRanks,
@@ -51,6 +53,34 @@ assertClose(computeGapPercent(100, 0), 0, '跳空幅度：前收為 0（異常�
 // ---- computeRelativeStrength ----
 assertClose(computeRelativeStrength(5, 1), 4, '相對強弱：個股漲 5% 大盤漲 1%，相對強弱 +4');
 assertClose(computeRelativeStrength(-2, 1), -3, '相對強弱：個股跌 2% 大盤漲 1%，相對強弱 -3（弱勢股）');
+
+// ---- computeChangePercent ----
+assertClose(computeChangePercent(5, 100), 5, '漲跌幅：前收100漲5元，漲跌幅 +5%');
+assertClose(computeChangePercent(-3, 60), -5, '漲跌幅：前收60跌3元，漲跌幅 -5%');
+assertClose(computeChangePercent(5, 0), 0, '漲跌幅：前收為0時應回傳0，避免除以0');
+assertClose(computeChangePercent(5, null), 0, '漲跌幅：前收是null時應回傳0');
+
+// ---- computeMultiDayRelativeStrength ----
+assertClose(
+  computeMultiDayRelativeStrength([4, 2, 6]),
+  4,
+  '多日相對強弱：[今天+4, 昨天+2, 前天+6] 平均應為 4'
+);
+assertClose(
+  computeMultiDayRelativeStrength([-3]),
+  -3,
+  '多日相對強弱：只有一天資料時，應等於那一天的值（等同單日版本）'
+);
+assertClose(
+  computeMultiDayRelativeStrength([]),
+  0,
+  '多日相對強弱：完全沒有資料時應回傳0（視為中性），不應該拋出例外'
+);
+assertClose(
+  computeMultiDayRelativeStrength([5, NaN, 3, undefined, 1]),
+  3,
+  '多日相對強弱：非數字（NaN/undefined）的天數應被過濾掉，不參與平均，[5,3,1]平均=3'
+);
 
 // ---- computeInstitutionalRatio ----
 assertClose(computeInstitutionalRatio(50000, 1000000), 5, '法人買賣超比例：買超 5 萬股佔成交量 100 萬股的 5%');

@@ -6,7 +6,9 @@
 import {
   computeVolumeRatio,
   computeGapPercent,
+  computeChangePercent,
   computeRelativeStrength,
+  computeMultiDayRelativeStrength,
   computeInstitutionalRatio,
   computeMarketChangeProxy,
   computeCompositeScores,
@@ -14,10 +16,17 @@ import {
 
 /**
  * 把單一股票的今日行情 + 歷史成交量 + 法人買賣超，轉成候選股物件（含四大因子的原始值）
+ *
+ * @param {Object} quote
+ * @param {Map<string, number[]>} volumeHistory
+ * @param {Map<string, number>} institutionalNetBuy
+ * @param {number} marketChangePercent 當日大盤漲跌幅
+ * @param {Map<string, number[]>} [changeHistory] 過去幾天每檔股票的漲跌幅（給多日相對強弱用，見 volume-archive.mjs 的 getRecentChangeHistory）
+ * @param {number[]} [marketChangeHistory] 過去幾天的大盤漲跌幅，天數順序需與 changeHistory 對應的股票資料一致（都是新到舊）
  */
-function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangePercent) {
+function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory = new Map(), marketChangeHistory = []) {
   const prevClose = quote.close - quote.change;
-  const changePercent = prevClose > 0 ? (quote.change / prevClose) * 100 : 0;
+  const changePercent = computeChangePercent(quote.change, prevClose);
   const pastVolumes = volumeHistory.get(quote.code) || [];
   // 沒有法人買賣超資料的股票（例如上櫃股票，目前這個資料源只涵蓋上市；或當日 T86 報表沒列出的個股），
   // 視為 0（中性，沒有法人訊號），不像量能異常因子那樣直接排除，因為「沒有法人資料」跟「量能異常算不出來」
@@ -29,6 +38,24 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
   const institutionalDataMissing = !institutionalNetBuy.has(quote.code);
   const netBuyShares = institutionalNetBuy.get(quote.code) ?? 0;
 
+  // 相對強弱因子：優先用「多日」版本（今天 + 過去幾天的單日相對強弱勢取平均，見 factors.mjs 的
+  // computeMultiDayRelativeStrength），只有在這檔股票、或大盤都還沒有足夠的歷史資料時
+  // （剛部署、剛清空 Blobs、或這檔是新股），才退回原本的單日版本——這跟量能異常因子的
+  // 「暖機」邏輯是同一套哲學：優雅退化，不會因為歷史資料不夠就把整檔股票排除在候選之外。
+  //
+  // 個股歷史（changeHistory）跟大盤歷史（marketChangeHistory）的天數不一定相等（例如大盤資料
+  // 是這次升級後才開始存，個股歷史可能還沒補到一樣的天數），取兩者較短的長度配對，
+  // 確保「這一天的個股漲跌幅」跟「這一天的大盤漲跌幅」是真的對應同一個交易日。
+  const pastChangePercents = changeHistory.get(quote.code) || [];
+  const windowLength = Math.min(pastChangePercents.length, marketChangeHistory.length);
+  const relativeStrengthWindowDays = windowLength + 1; // +1 是今天
+  const relativeStrength = windowLength > 0
+    ? computeMultiDayRelativeStrength([
+        changePercent - marketChangePercent,
+        ...pastChangePercents.slice(0, windowLength).map((pct, i) => pct - marketChangeHistory[i]),
+      ])
+    : computeRelativeStrength(changePercent, marketChangePercent);
+
   return {
     code: quote.code,
     name: quote.name,
@@ -38,7 +65,8 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
     volume: quote.volume, // 原始成交股數，給前端做「成交量過濾」用（跟 volumeRatio 不同，volumeRatio 是倍數不是絕對量）
     volumeRatio: computeVolumeRatio(quote.volume, pastVolumes),
     gapPercent: computeGapPercent(quote.open, prevClose),
-    relativeStrength: computeRelativeStrength(changePercent, marketChangePercent),
+    relativeStrength,
+    relativeStrengthWindowDays, // 診斷用：這次相對強弱是用幾天資料算出來的（1 代表退回單日版本）
     institutionalRatio: computeInstitutionalRatio(netBuyShares, quote.volume),
     institutionalDataMissing,
     hasHistory: pastVolumes.length > 0,
@@ -56,14 +84,26 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
  * @param {Object} [options.weights] 因子權重，傳給 computeCompositeScores
  * @param {number} [options.marketChangePercent] 真實的大盤（TAIEX）漲跌百分比，如果有提供就直接使用；
  *   沒提供時（例如抓取失敗）退回用全市場成交值加權平均漲跌幅估計（見 computeMarketChangeProxy）
+ * @param {Map<string, number[]>} [options.changeHistory] 過去幾天每檔股票的漲跌幅（見 volume-archive.mjs 的
+ *   getRecentChangeHistory），給多日相對強弱因子用。沒提供時，相對強弱因子會全部退回單日版本。
+ * @param {number[]} [options.marketChangeHistory] 過去幾天的大盤漲跌幅（見 volume-archive.mjs 的
+ *   getRecentMarketChangeHistory），天數需與 changeHistory 的資料對應同一批交易日
  * @returns {{marketChangePercent: number, longWatchlist: Array, shortWatchlist: Array, totalCandidates: number, excludedNoHistory: number}}
  */
 export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy = new Map(), options = {}) {
-  const { topN = 100, weights, marketChangePercent: marketChangePercentOverride } = options;
+  const {
+    topN = 100,
+    weights,
+    marketChangePercent: marketChangePercentOverride,
+    changeHistory = new Map(),
+    marketChangeHistory = [],
+  } = options;
 
   const marketChangePercent = marketChangePercentOverride ?? computeMarketChangeProxy(todayQuotes);
 
-  const allCandidates = todayQuotes.map((q) => buildCandidate(q, volumeHistory, institutionalNetBuy, marketChangePercent));
+  const allCandidates = todayQuotes.map((q) =>
+    buildCandidate(q, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory, marketChangeHistory)
+  );
 
   // 沒有歷史成交量資料的股票（例如新股），量能異常因子沒有意義，排除在評分之外。
   // 篩選完後順手把 hasHistory 這個「只是拿來篩選用」的內部標記拿掉，不要讓它外洩到最終輸出——

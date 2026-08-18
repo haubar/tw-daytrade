@@ -16,7 +16,7 @@
 // 補強，再跑第二輪產生最終結果（見 lib/screen.mjs 的 getTpexCandidateCodes 說明）。
 
 import { normalizeTwseRow, normalizeTpexRow, isTradableRow, isWarrant } from './lib/normalize.mjs';
-import { getRecentVolumeHistory, appendDailySnapshot } from './lib/volume-archive.mjs';
+import { getRecentVolumeHistory, appendDailySnapshot, DEFAULT_HISTORY_WINDOW_DAYS } from './lib/volume-archive.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
 import { fetchFinMindInstitutionalNetBuy } from './lib/finmind.mjs';
 import { fetchTaiexChangePercent } from './lib/taiex.mjs';
@@ -66,7 +66,7 @@ export default async (req) => {
     const [twseResult, tpexResult, historyResult, institutionalResult, taiexResult] = await Promise.allSettled([
       fetchTodayTwseQuotes(),
       fetchTodayTpexQuotes(),
-      getRecentVolumeHistory(3, todayDateStr),
+      getRecentVolumeHistory(DEFAULT_HISTORY_WINDOW_DAYS, todayDateStr),
       fetchInstitutionalNetBuy(),
       fetchTaiexChangePercent(),
     ]);
@@ -105,8 +105,9 @@ export default async (req) => {
 
     // getRecentVolumeHistory 內部如果連不到 Blobs 會整個 reject，這裡保守處理成「視為沒有歷史資料」，
     // 而不是讓整個 scan 跟著死掉——量能異常因子會全部是中性值，但其他三個因子還是能正常運作。
-    // 天數設定為 3 天：剛開始使用（或剛清空 Blobs 累積庫）的前幾天，累積天數不夠 3 天，
-    // 可以先用 backfill-history.mjs 手動補資料加速暖機。
+    // 天數設定為 DEFAULT_HISTORY_WINDOW_DAYS（見 volume-archive.mjs 的說明，原本 3 天拉長到 5 天，
+    // 降低單一天異常量能對均量基準的干擾）：剛開始使用（或剛清空 Blobs 累積庫）的前幾天，
+    // 累積天數不夠，可以先用 backfill-history.mjs 手動補資料加速暖機。
     const { volumeHistory, datesUsed } =
       historyResult.status === 'fulfilled' ? historyResult.value : { volumeHistory: new Map(), datesUsed: [] };
 
@@ -204,7 +205,7 @@ export default async (req) => {
           ? `ok (${institutionalNetBuy.size} 檔)${institutionalWarning ? ` ⚠ ${institutionalWarning}` : ''}`
           : `失敗: ${institutionalWarning}`,
         historyArchive: historyResult.status === 'fulfilled'
-          ? `ok（累積 ${datesUsed.length}/3 天，${datesUsed.length < 3 ? '尚未暖機完成，量能異常因子會偏向中性' : '天數足夠'}）${archiveWarning ? ` ⚠ ${archiveWarning}` : ''}`
+          ? `ok（累積 ${datesUsed.length}/${DEFAULT_HISTORY_WINDOW_DAYS} 天，${datesUsed.length < DEFAULT_HISTORY_WINDOW_DAYS ? '尚未暖機完成，量能異常因子會偏向中性' : '天數足夠'}）${archiveWarning ? ` ⚠ ${archiveWarning}` : ''}`
           : `失敗（本次量能異常因子將全部視為中性）: ${historyResult.reason?.message ?? '未知錯誤'}`,
         taiex: realTaiexChangePercent !== null ? 'ok（使用真實 TAIEX 指數）' : `改用估計值${taiexWarning ? ` ⚠ ${taiexWarning}` : ''}`,
         finmindTpexInstitutional: finmindStatus,

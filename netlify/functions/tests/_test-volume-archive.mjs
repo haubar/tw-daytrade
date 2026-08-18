@@ -1,7 +1,7 @@
 // netlify/functions/_test-volume-archive.mjs
 // 執行方式：npm run test:volume-archive
 
-import { appendDailySnapshot, getRecentVolumeHistory, getArchivedDates } from '../lib/volume-archive.mjs';
+import { appendDailySnapshot, getRecentVolumeHistory, getArchivedDates, DEFAULT_HISTORY_WINDOW_DAYS } from '../lib/volume-archive.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -91,6 +91,27 @@ assertEqual(archivedDates7, ['2026-07-07', '2026-07-06'], 'getArchivedDates：�
 
 const emptyArchivedDates = await getArchivedDates(emptyStore);
 assertEqual(emptyArchivedDates, [], 'getArchivedDates：完全沒有資料時應回傳空陣列');
+
+// ---- 測試 8：DEFAULT_HISTORY_WINDOW_DAYS 常數與 getRecentVolumeHistory 搭配使用 ----
+// 對應《後續修改清單》P1「量能異常因子的計算窗口太短」：原本 3 天拉長到 5 天，
+// 降低單一天異常量能對均量基準的干擾。這裡驗證常數值本身，以及 scan.mjs 實際會用到的
+// 天數搭配 getRecentVolumeHistory 時，確實能抓到超過 3 天的歷史資料（不是還停留在舊行為）。
+assertEqual(DEFAULT_HISTORY_WINDOW_DAYS, 5, 'DEFAULT_HISTORY_WINDOW_DAYS 應為 5（原本 3 天，拉長以降低單日雜訊干擾）');
+
+const store8 = createFakeStore();
+for (const [date, volume] of [
+  ['2026-07-01', 1000],
+  ['2026-07-02', 1100],
+  ['2026-07-03', 1200],
+  ['2026-07-04', 1300],
+  ['2026-07-05', 1400],
+  ['2026-07-06', 1500], // 第 6 天，超出窗口範圍，不應被讀到
+]) {
+  await appendDailySnapshot(date, [{ code: '1101', volume }], store8);
+}
+const result8 = await getRecentVolumeHistory(DEFAULT_HISTORY_WINDOW_DAYS, null, store8);
+assertEqual(result8.datesUsed.length, 5, '窗口設為 DEFAULT_HISTORY_WINDOW_DAYS 時，應讀到 5 天資料（不再是舊的 3 天）');
+assertEqual(result8.volumeHistory.get('1101').length, 5, '單一股票的歷史成交量陣列長度應為 5');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

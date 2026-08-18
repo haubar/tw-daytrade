@@ -72,6 +72,22 @@ check(
   '多方觀察榜每一筆都應該有 institutionalContribution 欄位'
 );
 
+// ---- institutionalDataMissing：區分「中性 0 分」跟「真的沒有法人資料」----
+// STRONG 在 institutionalNetBuy 裡有資料（即使剛好是 0 也一樣），institutionalDataMissing 應為 false；
+// FLAT 完全沒放進 institutionalNetBuy，institutionalDataMissing 應為 true。
+const strongCandidate = result.longWatchlist.find((c) => c.code === 'STRONG');
+check(
+  strongCandidate.institutionalDataMissing === false,
+  'STRONG 有法人資料，institutionalDataMissing 應為 false',
+  `實際: ${strongCandidate.institutionalDataMissing}`
+);
+const flatCandidate = [...result.longWatchlist, ...result.shortWatchlist].find((c) => c.code === 'FLAT');
+check(
+  flatCandidate === undefined || flatCandidate.institutionalDataMissing === true,
+  'FLAT 沒有法人資料，institutionalDataMissing 應為 true',
+  `實際: ${flatCandidate && flatCandidate.institutionalDataMissing}`
+);
+
 // ---- marketChangePercent 覆蓋功能（真實 TAIEX 指數）----
 // 沒有傳 marketChangePercent 時，應該用估計值（前面的測試已經驗證過是個數字）；
 // 有明確傳入時，應該直接採用那個值，不會再去算估計值。

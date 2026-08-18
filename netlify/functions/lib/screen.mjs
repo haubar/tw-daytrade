@@ -19,9 +19,14 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
   const prevClose = quote.close - quote.change;
   const changePercent = prevClose > 0 ? (quote.change / prevClose) * 100 : 0;
   const pastVolumes = volumeHistory.get(quote.code) || [];
-  // 沒有法人買賣超資料的股票（例如上櫃股票，目前這個資料源只涵蓋上市），視為 0（中性，沒有法人訊號），
-  // 不像量能異常因子那樣直接排除，因為「沒有法人資料」跟「量能異常算不出來」的意義不同：
-  // 前者只是這個因子沒有訊號，後者是分母（均量）本身就沒有意義。
+  // 沒有法人買賣超資料的股票（例如上櫃股票，目前這個資料源只涵蓋上市；或當日 T86 報表沒列出的個股），
+  // 視為 0（中性，沒有法人訊號），不像量能異常因子那樣直接排除，因為「沒有法人資料」跟「量能異常算不出來」
+  // 的意義不同：前者只是這個因子沒有訊號，後者是分母（均量）本身就沒有意義。
+  //
+  // 但「中性 0 分」跟「法人真的買賣超剛好等於 0」在畫面上看起來會一模一樣，使用者無從分辨這檔股票的
+  // 總分是「四個因子都真實參與計算」還是「少了 30% 權重、其實只用三個因子在比」。用 institutionalDataMissing
+  // 明確標記資料缺席（而不是用 netBuyShares === 0 反推，那樣會誤判真的買賣超為零的股票），交給前端顯示提示。
+  const institutionalDataMissing = !institutionalNetBuy.has(quote.code);
   const netBuyShares = institutionalNetBuy.get(quote.code) ?? 0;
 
   return {
@@ -35,6 +40,7 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
     gapPercent: computeGapPercent(quote.open, prevClose),
     relativeStrength: computeRelativeStrength(changePercent, marketChangePercent),
     institutionalRatio: computeInstitutionalRatio(netBuyShares, quote.volume),
+    institutionalDataMissing,
     hasHistory: pastVolumes.length > 0,
   };
 }

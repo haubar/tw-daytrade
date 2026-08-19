@@ -56,6 +56,12 @@ function profitReference(price) {
             variant="notice"
             title="這檔股票當日沒有三大法人買賣超資料，法人買賣超因子以中性值（0分）計入總分，總分僅反映其餘三個因子"
           />
+          <Badge
+            v-if="item.dayTradeEligible === false"
+            label="不可當沖"
+            variant="notice"
+            title="這檔股票今天不在證交所公告的現股當沖標的清單裡（或臨時被暫停當沖資格），無法用現股當沖方式操作"
+          />
         </span>
 
         <span class="flex flex-col items-end font-mono leading-tight">

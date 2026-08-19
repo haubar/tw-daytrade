@@ -87,6 +87,11 @@ export function getPriceMoveForTicks(price, ticks) {
  * @property {number|null} minVolume 最小成交量（股數），null 代表不限制
  * @property {number|null} minGainPercent 最小漲跌幅度（取絕對值，讓多方/空方觀察榜可以共用同一個篩選條件：
  *   多方看漲幅有沒有超過這個門檻，空方看跌幅有沒有超過這個門檻），null 代表不限制
+ * @property {boolean} [hideDayTradeIneligible] 是否隱藏「今天不可以現股當沖」的股票（dayTradeEligible === false）。
+ *   只隱藏明確「不可以」的，dayTradeEligible === null（未知，目前上櫃股票都是這個狀態）不受影響——
+ *   資料不足不等於不合格，見 day-trade-eligibility.mjs 的說明。預設 false（不隱藏），因為目前
+ *   資料源只涵蓋上市，開預設會讓所有上櫃股票看起來都「正常顯示」但實際上這個因子完全沒被檢查過，
+ *   容易造成「已經幫你篩過了」的錯覺，先讓使用者自己選擇要不要開啟。
  */
 
 /**
@@ -96,11 +101,12 @@ export function getPriceMoveForTicks(price, ticks) {
  * @returns {Array}
  */
 export function filterWatchlist(items, filters) {
-  const { minPrice, maxPrice, minVolume, minGainPercent } = filters ?? {};
+  const { minPrice, maxPrice, minVolume, minGainPercent, hideDayTradeIneligible } = filters ?? {};
 
   return items.filter((item) => {
     if (item.close >= HIGH_PRICE_STOCK_LIMIT) return false;
     if (isPriceLimitLocked(item.changePercent)) return false;
+    if (hideDayTradeIneligible && item.dayTradeEligible === false) return false;
     if (minPrice != null && item.close < minPrice) return false;
     if (maxPrice != null && item.close > maxPrice) return false;
     if (minVolume != null && item.volume < minVolume) return false;
@@ -117,7 +123,9 @@ export function filterWatchlist(items, filters) {
  */
 export function isFilterActive(filters) {
   if (!filters) return false;
-  return [filters.minPrice, filters.maxPrice, filters.minVolume, filters.minGainPercent].some(
-    (v) => v != null && v !== ''
+  return (
+    [filters.minPrice, filters.maxPrice, filters.minVolume, filters.minGainPercent].some(
+      (v) => v != null && v !== ''
+    ) || Boolean(filters.hideDayTradeIneligible)
   );
 }

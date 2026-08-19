@@ -108,6 +108,25 @@ assertEqual(
   '套用預設最低流動性門檻（100張）時，成交量不足的股票(I)應被過濾掉'
 );
 
+// ---- 當沖資格過濾（對應《後續修改清單》P3「當沖資格過濾」）----
+const dayTradeItems = [
+  { code: 'J', close: 50, volume: 200000, changePercent: 2, dayTradeEligible: true },
+  { code: 'K', close: 50, volume: 200000, changePercent: 2, dayTradeEligible: false },
+  { code: 'L', close: 50, volume: 200000, changePercent: 2, dayTradeEligible: null }, // 未知（例如上櫃）
+];
+assertEqual(
+  filterWatchlist(dayTradeItems, {}).map((i) => i.code),
+  ['J', 'K', 'L'],
+  '預設不開啟 hideDayTradeIneligible 時，不應該隱藏任何股票（包含明確不可當沖的 K）'
+);
+assertEqual(
+  filterWatchlist(dayTradeItems, { hideDayTradeIneligible: true }).map((i) => i.code),
+  ['J', 'L'],
+  '開啟 hideDayTradeIneligible 後，只隱藏明確 dayTradeEligible===false 的股票(K)，未知(L)不受影響'
+);
+assertEqual(isFilterActive({ hideDayTradeIneligible: true }), true, 'isFilterActive：開啟 hideDayTradeIneligible 也算是有在篩選');
+assertEqual(isFilterActive({ hideDayTradeIneligible: false }), false, 'isFilterActive：hideDayTradeIneligible 是 false 時不算篩選中');
+
 // ---- 價格帶操作參考 ----
 assertEqual(getPriceBand(445.5), { min: 370, max: 500, profitTicks: 3 }, '445.5 元應套用 370~500 元、獲利參考 3 檔');
 assertEqual(getPriceBand(74.5), { min: 50, max: 74, profitTicks: 2 }, '74.5 元應按正常跳動價格歸入 50~74 元價格帶');

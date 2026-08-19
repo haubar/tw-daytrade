@@ -239,5 +239,34 @@ check(
   `實際: ${candidateAMismatch.relativeStrengthWindowDays}`
 );
 
+// ---- 當沖資格（對應《後續修改清單》P3「當沖資格過濾」）----
+const dtQuotes = [
+  { code: 'A', name: 'A股', market: 'TWSE', open: 101, high: 102, low: 100, close: 101, volume: 20000, change: 1 },
+  { code: 'B', name: 'B股', market: 'TWSE', open: 51, high: 52, low: 50, close: 51, volume: 20000, change: 1 },
+  { code: 'C', name: 'C股(上櫃)', market: 'TPEx', open: 31, high: 32, low: 30, close: 31, volume: 20000, change: 1 },
+];
+const dtVolumeHistory = new Map([['A', [10000]], ['B', [10000]], ['C', [10000]]]);
+
+// A 在清單裡（可當沖），B 不在清單裡（不可當沖），C 是上櫃（沒有資料源，應為未知/null）
+const dtResult = screenWatchlists(dtQuotes, dtVolumeHistory, new Map(), {
+  dayTradeEligibleCodes: new Set(['A']),
+});
+const findCode = (result, code) => [...result.longWatchlist, ...result.shortWatchlist].find((c) => c.code === code);
+check(findCode(dtResult, 'A').dayTradeEligible === true, '在當沖標的清單裡的上市股票，dayTradeEligible 應為 true');
+check(findCode(dtResult, 'B').dayTradeEligible === false, '不在當沖標的清單裡的上市股票，dayTradeEligible 應為 false');
+check(
+  findCode(dtResult, 'C').dayTradeEligible === null,
+  '上櫃股票沒有對應的當沖資格資料源，dayTradeEligible 應為 null（未知），不是 false（否定）',
+  `實際: ${findCode(dtResult, 'C').dayTradeEligible}`
+);
+
+// 沒有提供 dayTradeEligibleCodes（例如抓取失敗）時，全部應該是 null，不影響其他因子正常運作
+const dtResultNoData = screenWatchlists(dtQuotes, dtVolumeHistory, new Map(), {});
+check(
+  findCode(dtResultNoData, 'A').dayTradeEligible === null,
+  '沒有提供 dayTradeEligibleCodes 時，即使是上市股票也應該是 null（未知），而不是猜測為 false',
+  `實際: ${findCode(dtResultNoData, 'A').dayTradeEligible}`
+);
+
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

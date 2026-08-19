@@ -27,6 +27,7 @@ import { computeChangePercent, computeMarketChangeProxy } from './lib/factors.mj
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
 import { fetchFinMindInstitutionalNetBuy } from './lib/finmind.mjs';
 import { fetchTaiexChangePercent } from './lib/taiex.mjs';
+import { fetchDayTradeEligibleCodes } from './lib/day-trade-eligibility.mjs';
 import { screenWatchlists, getTpexCandidateCodes } from './lib/screen.mjs';
 import { saveLatestScan } from './lib/storage.mjs';
 import { isWeekend, isMarketDataReady } from './lib/trading-day.mjs';
@@ -70,7 +71,7 @@ export default async (req) => {
     // 三個資料來源彼此獨立，全部平行發出。歷史資料現在是讀 Netlify Blobs 裡累積的紀錄
     // （見 volume-archive.mjs），不再現場跟 TWSE 要好幾天份資料——這是部署後實測發現的
     // 效能瓶頸，改成這樣之後，理論上每次執行只需要各資料來源各一次請求，速度快很多。
-    const [twseResult, tpexResult, historyResult, changeHistoryResult, marketChangeHistoryResult, institutionalResult, taiexResult] = await Promise.allSettled([
+    const [twseResult, tpexResult, historyResult, changeHistoryResult, marketChangeHistoryResult, institutionalResult, taiexResult, dayTradeEligibleResult] = await Promise.allSettled([
       fetchTodayTwseQuotes(),
       fetchTodayTpexQuotes(),
       getRecentVolumeHistory(DEFAULT_HISTORY_WINDOW_DAYS, todayDateStr),
@@ -78,6 +79,7 @@ export default async (req) => {
       getRecentMarketChangeHistory(DEFAULT_HISTORY_WINDOW_DAYS, todayDateStr),
       fetchInstitutionalNetBuy(),
       fetchTaiexChangePercent(),
+      fetchDayTradeEligibleCodes(),
     ]);
 
     const todayQuotes = [
@@ -169,6 +171,16 @@ export default async (req) => {
       institutionalWarning = `法人買賣超資料抓取失敗（本次結果的法人因子將全部視為中性）: ${institutionalResult.reason.message}`;
     }
 
+    // 當沖資格清單抓取失敗一樣優雅退化：不影響掃描其他部分，只是這次結果的 dayTradeEligible
+    // 欄位全部會是 null（未知），不會誤判成「這些股票都不能當沖」。
+    let dayTradeEligibleCodes = null;
+    let dayTradeEligibleWarning = null;
+    if (dayTradeEligibleResult.status === 'fulfilled') {
+      dayTradeEligibleCodes = dayTradeEligibleResult.value;
+    } else {
+      dayTradeEligibleWarning = `當沖標的清單抓取失敗（本次結果的 dayTradeEligible 欄位將全部是未知）: ${dayTradeEligibleResult.reason.message}`;
+    }
+
     // topN 拉到 100（原本 30）：前端要做成交量/股價/漲幅篩選，如果候選池只有 30 檔，
     // 篩一篩很容易剩沒幾檔可看，拉大候選池篩選才有意義。
     //
@@ -178,6 +190,7 @@ export default async (req) => {
       marketChangePercent: realTaiexChangePercent ?? undefined,
       changeHistory,
       marketChangeHistory,
+      dayTradeEligibleCodes,
     });
 
     // 第二輪：從第一輪結果裡挑出「進了觀察榜的上櫃股票」，只對這些candidate額外查 FinMind 補強
@@ -206,6 +219,7 @@ export default async (req) => {
             marketChangePercent: realTaiexChangePercent ?? undefined,
             changeHistory,
             marketChangeHistory,
+            dayTradeEligibleCodes,
           });
         }
 
@@ -248,6 +262,9 @@ export default async (req) => {
           : '尚未累積到任何一天的多日資料，相對強弱因子暫時全部使用單日版本（這是這次升級後才開始存的資料，需要幾個交易日重新累積）',
         taiex: realTaiexChangePercent !== null ? 'ok（使用真實 TAIEX 指數）' : `改用估計值${taiexWarning ? ` ⚠ ${taiexWarning}` : ''}`,
         finmindTpexInstitutional: finmindStatus,
+        dayTradeEligibility: dayTradeEligibleCodes !== null
+          ? `ok（${dayTradeEligibleCodes.size} 檔上市股票今天可以現股當沖；上櫃股票暫無資料源，一律顯示未知）`
+          : `失敗（本次 dayTradeEligible 欄位全部顯示未知）: ${dayTradeEligibleWarning}`,
       },
       historicalDatesUsed: datesUsed,
       marketChangePercent: result.marketChangePercent,

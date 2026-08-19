@@ -64,7 +64,7 @@ function priceRangeStyle() {
 function resetFilters() {
   // 不直接替換 defineModel 指向的物件，避免父層傳入 reactive 物件時失去連結，
   // 這也是原本「清除篩選」看似沒有作用的原因。
-  Object.assign(filters.value, { minPrice: null, maxPrice: null, minVolume: null, minGainPercent: null });
+  Object.assign(filters.value, { minPrice: null, maxPrice: null, minVolume: null, minGainPercent: null, hideDayTradeIneligible: false });
 }
 </script>
 
@@ -122,6 +122,12 @@ function resetFilters() {
         <span class="flex justify-between font-mono text-[0.65rem] text-mute"><span>不限</span><span>1%</span><span>3%</span><span>5%</span><span>7%</span><span>10%</span></span>
       </label>
     </div>
+
+    <label class="mt-4 flex items-center gap-2 text-[0.78rem] text-paper">
+      <input v-model="filters.hideDayTradeIneligible" type="checkbox" class="accent-gold" />
+      隱藏今天不可現股當沖的股票
+      <span class="text-[0.68rem] text-mute">（只涵蓋上市，上櫃股票目前沒有資料源、不受此篩選影響）</span>
+    </label>
 
     <p class="m-0 mt-2 text-[0.72rem] text-mute">
       金色軌道只表示目前選取的股價區間。千元以上股票、當日已鎖漲停或跌停的股票固定排除；最小成交量預設為 100 張（避免顯示流動性太差、隔天可能買不到/賣不掉的股票），可自行調整或按「清除篩選」拿掉；「獲利參考 N 檔」表示該價位需上跳 N 個報價檔，並不會改變排行榜分數。

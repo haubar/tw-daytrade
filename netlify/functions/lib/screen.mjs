@@ -23,8 +23,10 @@ import {
  * @param {number} marketChangePercent 當日大盤漲跌幅
  * @param {Map<string, number[]>} [changeHistory] 過去幾天每檔股票的漲跌幅（給多日相對強弱用，見 volume-archive.mjs 的 getRecentChangeHistory）
  * @param {number[]} [marketChangeHistory] 過去幾天的大盤漲跌幅，天數順序需與 changeHistory 對應的股票資料一致（都是新到舊）
+ * @param {Set<string>} [dayTradeEligibleCodes] 今天可以現股當沖的上市股票代碼集合（見 day-trade-eligibility.mjs）。
+ *   只涵蓋上市，上櫃股票目前沒有對應的公開資料源，一律回傳 null（未知，不是不合格）
  */
-function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory = new Map(), marketChangeHistory = []) {
+function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory = new Map(), marketChangeHistory = [], dayTradeEligibleCodes = null) {
   const prevClose = quote.close - quote.change;
   const changePercent = computeChangePercent(quote.change, prevClose);
   const pastVolumes = volumeHistory.get(quote.code) || [];
@@ -56,6 +58,14 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
       ])
     : computeRelativeStrength(changePercent, marketChangePercent);
 
+  // 當沖資格：只有上市有公開的每日當沖標的清單（見 day-trade-eligibility.mjs）。
+  // dayTradeEligibleCodes 為 null 代表這次抓取失敗或還沒接上（優雅退化，不影響其他因子），
+  // 這種情況跟「上櫃沒有資料源」一樣，都回傳 null（未知）而不是 false（不合格）——
+  // 沒有資料不等於不合格，避免把「不知道」誤顯示成「這檔不能當沖」的否定結論。
+  const dayTradeEligible = quote.market !== 'TWSE' || dayTradeEligibleCodes === null
+    ? null
+    : dayTradeEligibleCodes.has(quote.code);
+
   return {
     code: quote.code,
     name: quote.name,
@@ -69,6 +79,7 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
     relativeStrengthWindowDays, // 診斷用：這次相對強弱是用幾天資料算出來的（1 代表退回單日版本）
     institutionalRatio: computeInstitutionalRatio(netBuyShares, quote.volume),
     institutionalDataMissing,
+    dayTradeEligible, // true=可當沖, false=今天不可當沖, null=未知（上櫃或資料抓取失敗）
     hasHistory: pastVolumes.length > 0,
   };
 }
@@ -88,6 +99,8 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
  *   getRecentChangeHistory），給多日相對強弱因子用。沒提供時，相對強弱因子會全部退回單日版本。
  * @param {number[]} [options.marketChangeHistory] 過去幾天的大盤漲跌幅（見 volume-archive.mjs 的
  *   getRecentMarketChangeHistory），天數需與 changeHistory 的資料對應同一批交易日
+ * @param {Set<string>} [options.dayTradeEligibleCodes] 今天可以現股當沖的上市股票代碼集合
+ *   （見 day-trade-eligibility.mjs）。不提供時所有候選股的 dayTradeEligible 都會是 null（未知）
  * @returns {{marketChangePercent: number, longWatchlist: Array, shortWatchlist: Array, totalCandidates: number, excludedNoHistory: number}}
  */
 export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy = new Map(), options = {}) {
@@ -97,12 +110,13 @@ export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy
     marketChangePercent: marketChangePercentOverride,
     changeHistory = new Map(),
     marketChangeHistory = [],
+    dayTradeEligibleCodes = null,
   } = options;
 
   const marketChangePercent = marketChangePercentOverride ?? computeMarketChangeProxy(todayQuotes);
 
   const allCandidates = todayQuotes.map((q) =>
-    buildCandidate(q, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory, marketChangeHistory)
+    buildCandidate(q, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory, marketChangeHistory, dayTradeEligibleCodes)
   );
 
   // 沒有歷史成交量資料的股票（例如新股），量能異常因子沒有意義，排除在評分之外。

@@ -1,7 +1,7 @@
 // netlify/functions/_test-trading-day.mjs
 // 執行方式：npm run test:trading-day
 
-import { isWeekend, formatDateParam, getPastTradingDayCandidates, isMarketDataReady, isExchangeHoliday } from '../lib/trading-day.mjs';
+import { isWeekend, formatDateParam, getPastTradingDayCandidates, isMarketDataReady, isExchangeHoliday, isNonTradingDay } from '../lib/trading-day.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -59,6 +59,11 @@ assertEqual(isExchangeHoliday(new Date(2026, 6, 7)), false, 'isExchangeHoliday�
 assertEqual(isExchangeHoliday(new Date(2026, 0, 2)), false, 'isExchangeHoliday：2026-01-02 元旦隔天（普通交易日）應為 false');
 // 清單裡沒有資料的年度（例如 2027），應該安全回傳 false，而不是拋出例外或誤判成假日
 assertEqual(isExchangeHoliday(new Date(2027, 0, 1)), false, 'isExchangeHoliday：清單裡沒有的年度應安全回傳 false，不拋出例外');
+
+// ---- isNonTradingDay：scan.mjs 寫入歷史快照前的共用防呆 ----
+assertEqual(isNonTradingDay(new Date(2026, 6, 4)), true, 'isNonTradingDay：週末不應寫入歷史快照');
+assertEqual(isNonTradingDay(new Date(2026, 0, 1)), true, 'isNonTradingDay：平日國定休市日不應寫入歷史快照');
+assertEqual(isNonTradingDay(new Date(2026, 0, 2)), false, 'isNonTradingDay：普通交易日可以寫入歷史快照');
 
 // ---- getPastTradingDayCandidates 應該同時跳過週末跟已知的國定假日 ----
 // 2026-01-06（星期二）往回推：01-05（一）候選 → 01-04(日)/01-03(六) 跳過週末

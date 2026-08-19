@@ -60,6 +60,17 @@ export function isExchangeHoliday(date) {
   return holidaySet.has(formatIsoDate(date));
 }
 
+/**
+ * 判斷某日是否不應寫入盤後歷史快照。
+ *
+ * 排程本身只用週一至週五的 cron，仍會在平日國定休市日觸發；若沒有這層判斷，
+ * 資料端點回傳的最近交易日行情會被以「休市日」重複保存，污染量能與相對強弱
+ * 的歷史窗口。
+ */
+export function isNonTradingDay(date) {
+  return isWeekend(date) || isExchangeHoliday(date);
+}
+
 const TAIWAN_UTC_OFFSET_HOURS = 8;
 const MARKET_DATA_READY_HOUR = 14; // 台灣時間幾點後，盤後資料才算大致穩定可用
 

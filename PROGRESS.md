@@ -1238,3 +1238,25 @@ README.md（已知限制、FinMind 診斷說明更新）
 **驗證方式**：新增 `_test-backtest-history.mjs` 8 項案例；以 Node 20.20.2 執行 `npm run test`，目前共 **265** 項案例全數通過。
 
 **待部署驗證**：`backfill-backtest.mjs` 會對真實 TWSE 歷史行情與 T86 發出多次請求，雖已沿用既有的分批與實際日期驗證模式，仍需在 Netlify 確認每批可在 30 秒內完成，再依 `nextEndDate` 逐批續跑。
+
+---
+
+## 階段 37：QA 覆盤階段 35/36，修正 latest 指標覆寫 bug + 補上缺少的 .nvmrc
+
+**背景**：接手繼續開發前，先重新核對過階段 33～36 的實際交付狀態（跑一次 `npm run test`、`npm run build`），而不是只信任 PROGRESS.md 的敘述——這是先前階段 29/30/32 反覆出現「文件宣稱完成但實際沒有」問題後養成的習慣。
+
+**發現並修正的問題**：
+1. **真實 bug（不是文件落差）**：`backfill-backtest.mjs` 依「訊號日由近到遠」依序呼叫 `saveBacktestResult()`，但該函式原本無條件覆寫 `latest` 指標，導致迴圈跑完後 `latest` 停在這批裡「最舊」的一天。用重現腳本實際驗證過（3 個訊號日依序寫入，跑完後 latest 錯誤地停在最舊的一天），確認是真的 bug 才動手修。修法：`saveBacktestResult()` 只在新結果的訊號日 `>=` 目前 latest 的訊號日時才更新 latest。新增 2 個迴歸測試涵蓋這個情境。
+2. **文件與實際不符（再次發生）**：階段 34 宣稱新增了 `.nvmrc`，但檔案實際不存在。已補上（`20.18.1`，對應 `package.json` 的 `engines` 欄位）。
+
+**完成事項（本階段接續完成的新功能）**：
+3. 新增前端視覺回歸測試機制（對應《後續修改清單》P3「前端視覺回歸檢查機制」）：
+   - `playwright.config.js`：Playwright 設定，固定用 `sampleData.js` 假資料截圖比對，涵蓋桌面與手機兩種裝置
+   - `tests/visual/dashboard.spec.js`：4 個測試案例（預設畫面、篩選面板互動後、觀察榜卡片徽章特寫、手機版排版）
+   - `package.json` 新增 `test:visual`／`test:visual:update`／`test:visual:ui` 指令，刻意不放進 `npm run test` 主測試鏈（需要真的裝瀏覽器執行檔，環境需求不同）
+   - README 新增「前端視覺回歸測試」章節說明如何使用
+
+**已知限制**：開發這份程式碼的容器環境網路白名單沒有開放 `cdn.playwright.dev`（Playwright 瀏覽器執行檔下載來源），無法在該環境內實際安裝瀏覽器、執行測試、或產生基準截圖。設定檔與測試案例邏輯已確認沒問題，但**基準截圖還沒有真的產生過**，需要在本機或 CI（例如 GitHub Actions）執行 `npm run test:visual:update` 才能建立，且第一次產生後務必人工檢查截圖內容是否正確。
+
+**驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **267** 項案例全數通過（含新增的 2 個 backtest 迴歸測試）；`npm run build` 成功。視覺回歸測試因上述網路限制，未能在本環境實際執行，邏輯已人工覆核。
+

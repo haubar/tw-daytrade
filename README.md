@@ -226,6 +226,32 @@ npm run test:filter-watchlist # 前端篩選邏輯（成交量／股價／漲跌
 
 這些測試都只用寫死的樣本／假資料驗證邏輯對不對，不會真的連線抓資料，所以可以放心常常跑。
 
+## 前端視覺回歸測試
+
+用 [Playwright](https://playwright.dev/) 的截圖比對機制，抓前端疊代時不小心弄壞版面的問題（例如篩選面板改版擠壞、徽章顏色跑掉、手機版排版跑版），對應「前端 Dashboard 完全沒有自動化把關」這項已知限制。
+
+跟上面 `npm run test` 那組單元測試不同，視覺測試**不包含**在 `npm run test` 裡（需要真的裝瀏覽器執行檔，環境需求不同、跑起來也慢很多），要另外執行：
+
+```bash
+# 第一次執行前，需要先裝 Playwright 用的瀏覽器執行檔（只需要做一次）
+npx playwright install chromium
+
+# 第一次執行：建立基準截圖（之後每次比對都是跟這次存的圖比較）
+npm run test:visual:update
+
+# 之後疊代前端時，用這個確認畫面有沒有跑掉
+npm run test:visual
+
+# 想用瀏覽器介面互動式檢視每一步截圖比對結果，可以用
+npm run test:visual:ui
+```
+
+測試內容固定用 `sampleData.js` 的假資料（`tests/visual/dashboard.spec.js` 起 `vite preview` 的靜態伺服器，沒有 Netlify Functions，前端會自動退回範例資料），畫面內容穩定、不受今天股價影響，截圖比對才有意義。涵蓋：預設畫面、篩選面板互動後的畫面、單一觀察榜卡片的徽章特寫、手機版排版。
+
+基準截圖（`tests/visual/**/*-snapshots/`）需要進版控，這樣其他人 clone 下來執行 `npm run test:visual` 才有東西可以比對；`.gitignore` 已經排除掉執行過程的暫存產物（`test-results/`、`playwright-report/`），只有基準圖本身會進版控。
+
+**已知限制**：這份程式碼是在一個網路白名單受限的容器環境裡寫的，沒辦法下載 Playwright 的瀏覽器執行檔（`cdn.playwright.dev` 不在允許清單），所以設定檔跟測試案例本身雖然已經寫好、邏輯確認沒問題，但**基準截圖還沒有真的產生過**，需要你在本機或 CI（例如 GitHub Actions，那邊網路沒有限制）執行一次 `npm run test:visual:update` 才會有基準圖可以比對。**第一次產生基準圖之後，務必人工打開 `tests/visual/**/*-snapshots/` 裡的圖檔看過一次**，確認畫面真的長得對，而不是無條件相信它——截圖比對只能抓「跟基準圖不一樣」，沒辦法幫你判斷「基準圖本身有沒有問題」。
+
 ## 如何部署到 Netlify
 
 1. 把整個資料夾 push 到你的 GitHub repo

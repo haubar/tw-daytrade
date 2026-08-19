@@ -34,5 +34,31 @@ await saveBacktestResult({ signalDate: '2026-08-18', executionDate: '2026-08-19'
 assertEqual(await getLatestBacktestResult(store), { signalDate: '2026-08-18', executionDate: '2026-08-19', rerun: true }, '重跑同一訊號日應覆蓋最新回測結果');
 assertEqual(data.get('index'), ['2026-08-18'], '重跑同一訊號日不應重複加入索引');
 
+// ---- 迴歸測試：backfill-backtest.mjs 依「訊號日由近到遠」依序呼叫 saveBacktestResult 時，
+// latest 指標不能被中途處理到的舊訊號日覆蓋（真實發生過的 bug：迴圈跑完後 latest
+// 停在這批裡最舊的一天，而不是最新的一天）----
+const store2 = { setJSON: async (key, value) => data2.set(key, value), get: async (key) => data2.get(key) ?? null };
+const data2 = new Map();
+await saveBacktestResult({ signalDate: '2026-08-14' }, store2); // 最新
+await saveBacktestResult({ signalDate: '2026-08-13' }, store2);
+await saveBacktestResult({ signalDate: '2026-08-12' }, store2); // 最舊，最後處理
+assertEqual(
+  (await getLatestBacktestResult(store2)).signalDate,
+  '2026-08-14',
+  'backfill 依「由近到遠」順序處理多個訊號日後，latest 應該還是最新的那一天，不能被後處理到的舊日期覆蓋'
+);
+
+// 反過來：如果先存了新的（例如 scan.mjs 當天寫入），之後才跑 backfill 補到更舊的資料，
+// latest 也不該被那些更舊的補檔結果蓋掉。
+const store3 = { setJSON: async (key, value) => data3.set(key, value), get: async (key) => data3.get(key) ?? null };
+const data3 = new Map();
+await saveBacktestResult({ signalDate: '2026-08-19' }, store3); // scan.mjs 當天寫入的最新結果
+await saveBacktestResult({ signalDate: '2026-08-10' }, store3); // 之後才跑的歷史回填，比較舊
+assertEqual(
+  (await getLatestBacktestResult(store3)).signalDate,
+  '2026-08-19',
+  '之後才寫入的歷史回填資料（更舊的訊號日）不應該覆蓋掉已經存在的、更新的 latest'
+);
+
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

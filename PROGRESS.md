@@ -1260,3 +1260,23 @@ README.md（已知限制、FinMind 診斷說明更新）
 
 **驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **267** 項案例全數通過（含新增的 2 個 backtest 迴歸測試）；`npm run build` 成功。視覺回歸測試因上述網路限制，未能在本環境實際執行，邏輯已人工覆核。
 
+---
+
+## 階段 38：交易日曆自動同步（P4「交易日曆自動化」）
+
+**背景**：`trading-day.mjs` 的 `EXCHANGE_HOLIDAYS_BY_YEAR` 是手動維護的休市日清單，只到 2026 年，每年需要記得手動更新，屬於容易被遺忘的維運債。
+
+**資料源調查**：實際呼叫過 `https://openapi.twse.com.tw/v1/holidaySchedule/holidaySchedule`（TWSE 官方開休市日期公告端點），取得真實回傳格式作為測試樣本，不是憑空編造。這份清單有個容易忽略的陷阱：不是每一筆都是「休市日」，還混雜了「農曆春節前最後交易日」「國曆新年開始交易日」這類**有交易**、只是想提醒使用者的資訊性公告，必須靠 `Description`（是否含「放假」/「補假」）跟 `Name`（是否含「無交易」）分辨——過程中第一版判斷規則漏掉了「補假」的情況（和平紀念日的補假說明文字只寫「補假」不寫「放假」），寫真實樣本測試時抓到，已修正。
+
+**完成事項**：
+1. `trading-calendar.mjs`（新檔案）：`fetchExchangeHolidays()` 抓取並解析官方公告，回傳「真正的休市日」`Set`；`rocDateToIso()` 把民國日期字串轉西元格式；純函式 `isActualHoliday()`／`parseHolidayScheduleRows()` 拆出來方便用真實樣本測試，不用連網路
+2. `trading-calendar-cache.mjs`（新檔案）：仿照 `volume-archive.mjs` 的 Blobs 儲存模式，依年度存取休市日集合。刻意讓「沒查過」（回傳 `null`）跟「查過但這年真的沒有休市日」（回傳空集合）語意不同，呼叫端可以正確判斷要不要退回靜態表
+3. `sync-trading-calendar.mjs`（新 Netlify Function）：一次性手動觸發（仿照 `backfill-history.mjs` 的操作方式），抓取並依年度分組寫入 Blobs 快取
+4. `trading-day.mjs`：`isNonTradingDay()` 新增可選的 `dynamicHolidays` 參數（預設空集合），跟原本的靜態表判斷是「或」的關係——完全向後相容，既有呼叫端不用改
+5. `scan.mjs`：串接自動同步的日曆資料，寫入歷史累積庫前優先參考這份資料，讀取失敗時優雅退回只用靜態表，不影響主流程
+
+**已知限制**：目前只串接到 `scan.mjs` 的歷史累積庫寫入防呆；`getPastTradingDayCandidates`（`backfill-history.mjs`、`backfill-backtest.mjs` 用來挑選候選交易日）暫時還是只參考靜態表，尚未接上自動同步的資料——這兩支 function 最終都會用「回傳資料本身的日期」再次驗證，不完全依賴候選日期猜測，所以這個限制不影響現有功能的正確性，只是還沒發揮自動同步的完整效益，留待後續疊代。
+
+**驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **301** 項案例全數通過（含新增的 23 個 trading-calendar 測試、7 個 trading-calendar-cache 測試、4 個 trading-day 的 dynamicHolidays 迴歸測試）；`npm run build` 成功。
+
+

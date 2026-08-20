@@ -57,6 +57,7 @@ tw-daytrade-scanner/
     ├── scan.mjs                            # 【主要進入點】完整流程：抓取→讀取歷史累積庫→篩選→存入 Blobs
     ├── backfill-history.mjs               # 一次性手動補歷史資料工具（加速暖機，見下方說明）
     ├── backfill-backtest.mjs              # 分批回填上市市場歷史回測（見下方說明）
+    ├── sync-trading-calendar.mjs          # 一次性手動同步 TWSE 官方交易日曆（見下方說明）
     ├── latest.mjs                           # 給前端呼叫：讀取 Blobs 裡最新一筆結果
     ├── backtest-latest.mjs                # 讀取最新一筆基準／歷史回測結果
     ├── fetch-daily-quotes.mjs             # 輔助 function：只抓今日行情（除錯用）
@@ -65,6 +66,8 @@ tw-daytrade-scanner/
     └── lib/
         ├── normalize.mjs                   # 資料正規化：把不同來源／格式轉成統一格式
         ├── trading-day.mjs                  # 共用交易日邏輯：判斷週末、國定假日、產生候選交易日清單
+        ├── trading-calendar.mjs             # 抓取並解析 TWSE 官方交易日曆公告
+        ├── trading-calendar-cache.mjs        # 交易日曆的 Blobs 快取層（sync-trading-calendar.mjs 寫入、scan.mjs 讀取）
         ├── history.mjs                     # 現場抓取多天歷史資料（僅 backfill-history.mjs 使用）
         ├── volume-archive.mjs               # 歷史成交量的 Blobs 累積儲存層（scan.mjs 實際使用的歷史資料來源）
         ├── taiex.mjs                        # 真實 TAIEX 指數抓取（MI_INDEX 端點）
@@ -114,7 +117,22 @@ https://你的站台.netlify.app/.netlify/functions/backfill-backtest
 - `scan.mjs` 如果在**台灣時間下午 2 點前**被觸發，同樣不會寫入歷史累積庫——台股 13:30 收盤，太早查詢可能拿到還沒最終確認的盤後資料。排程本身設定在台灣時間 14:10 觸發，本來就會過這個檢查，這個限制主要是防呆使用者提早手動觸發測試的情況
 - `backfill-history.mjs` 產生候選日期時就會跳過週六日，只找平日
 - 以上判斷邏輯都來自同一個共用模組 `lib/trading-day.mjs`，避免各處各自寫一份容易長出不一致的行為
-- 除了週末，也會排除已知的台股休市日（以 2026 年官方交易日曆為準，見 `lib/trading-day.mjs` 的 `EXCHANGE_HOLIDAYS_BY_YEAR`）。這不是完整的國定假日計算引擎，而是一份手動維護的休市日清單，每年需要更新一次；如果遇到清單裡沒有的年度或漏列的日子，`getPastTradingDayCandidates` 會安全地當作「不是假日」處理，候選範圍頂多多找幾輪，不會產生錯誤結果（因為最終還是會用「回傳資料本身的日期」驗證）
+- 除了週末，也會排除已知的台股休市日。判斷來源有兩層：**優先**用 `sync-trading-calendar.mjs` 自動同步下來、存在 Blobs 裡的官方交易日曆（見下方「交易日曆自動同步」章節），**備援**才用 `lib/trading-day.mjs` 裡手動維護的 `EXCHANGE_HOLIDAYS_BY_YEAR` 靜態表。如果兩邊都沒有涵蓋到（例如清單裡沒有的年度、或還沒同步過），`getPastTradingDayCandidates` 會安全地當作「不是假日」處理，候選範圍頂多多找幾輪，不會產生錯誤結果（因為最終還是會用「回傳資料本身的日期」驗證）
+
+## 交易日曆自動同步
+
+原本 `lib/trading-day.mjs` 的休市日清單（`EXCHANGE_HOLIDAYS_BY_YEAR`）是手動維護的，每年要記得更新，容易忘記。現在改成可以自動從 TWSE 官方公告同步：
+
+```bash
+# 部署後打開一次即可，通常一年跑個一兩次就夠（TWSE 通常在年底前會公告下一年度的交易日曆）
+https://你的站台.netlify.app/.netlify/functions/sync-trading-calendar
+```
+
+這支 function 會抓 TWSE OpenAPI 的 `/holidaySchedule/holidaySchedule` 端點（官方公告的開休市日期），解析出「真正的休市日」存進 Blobs（`lib/trading-calendar-cache.mjs`），依年度分開存放。`scan.mjs` 判斷「今天要不要把資料寫入歷史累積庫」時，會優先參考這裡同步下來的資料，`EXCHANGE_HOLIDAYS_BY_YEAR` 靜態表只在還沒同步過、或同步失敗時當備援，兩者是「或」的關係，不會互相蓋掉。
+
+**判斷規則需要留意**：TWSE 這份公告清單裡，不是每一筆都是「休市日」——也包含像「農曆春節前最後交易日」「國曆新年開始交易日」這種提醒用的資訊性公告，那幾天實際上**有交易**。`lib/trading-calendar.mjs` 的 `isActualHoliday()` 用「說明文字包含『放假』或『補假』」「名稱包含『無交易』」判斷是不是真正的休市日，已經用實際 API 回傳的樣本資料驗證過解析結果（見 `_test-trading-calendar.mjs`）。
+
+**目前只串接到 `scan.mjs` 的歷史累積庫寫入防呆**（決定今天要不要寫入 Blobs）；`getPastTradingDayCandidates`（`backfill-history.mjs`、`backfill-backtest.mjs` 挑選候選交易日時使用）目前仍只參考靜態表，還沒接上自動同步的資料——這是已知的後續改善項目，不影響現有功能正確性（因為這兩支 function 最終都會用「回傳資料本身的日期」再次驗證，不完全依賴候選日期猜測）。
 
 **如果 backfill-history 抓不到之前交易日的資料**：這支 function 的回應會附上 `debugInfo` 欄位，列出每個候選日期「送出去的參數」跟「實際拿回來的日期」，方便判斷問題出在哪：
 - 如果每筆 `actualDate` 都一樣 → 曾經實測發生過：原本用的 `www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?date=...` 端點不管 `date` 參數送哪一天，回傳的都是同一天資料，研判是 CDN 快取沒有把 `date` 算進快取鍵值。**已經改用 `MI_INDEX` 端點解決**（見下方說明），如果又遇到這個症狀，可能是 `MI_INDEX` 端點本身也開始出現同樣的問題，需要再進一步排查

@@ -18,6 +18,8 @@
     "test:storage": "node netlify/functions/tests/_test-storage.mjs",
     "test:volume-archive": "node netlify/functions/tests/_test-volume-archive.mjs",
     "test:trading-day": "node netlify/functions/tests/_test-trading-day.mjs",
+    "test:trading-calendar": "node netlify/functions/tests/_test-trading-calendar.mjs",
+    "test:trading-calendar-cache": "node netlify/functions/tests/_test-trading-calendar-cache.mjs",
     "test:taiex": "node netlify/functions/tests/_test-taiex.mjs",
     "test:finmind": "node netlify/functions/tests/_test-finmind.mjs",
     "test:day-trade-eligibility": "node netlify/functions/tests/_test-day-trade-eligibility.mjs",
@@ -30,7 +32,7 @@
     "test:schema": "node netlify/functions/tests/_test-schema-consistency.mjs",
     "test:edge-cases": "node netlify/functions/tests/_test-edge-all-sources-fail.mjs && node netlify/functions/tests/_test-edge-tpex-mismatch.mjs",
     "test:filter-watchlist": "node src/utils/_test-filterWatchlist.js",
-    "test": "npm run test:fetch && npm run test:factors && npm run test:history && npm run test:screen && npm run test:institutional && npm run test:storage && npm run test:volume-archive && npm run test:trading-day && npm run test:taiex && npm run test:finmind && npm run test:day-trade-eligibility && npm run test:backfill-pick && npm run test:backtest && npm run test:backtest-history && npm run test:integration && npm run test:integration-backfill && npm run test:integration-latest && npm run test:schema && npm run test:edge-cases && npm run test:filter-watchlist",
+    "test": "npm run test:fetch && npm run test:factors && npm run test:history && npm run test:screen && npm run test:institutional && npm run test:storage && npm run test:volume-archive && npm run test:trading-day && npm run test:trading-calendar && npm run test:trading-calendar-cache && npm run test:taiex && npm run test:finmind && npm run test:day-trade-eligibility && npm run test:backfill-pick && npm run test:backtest && npm run test:backtest-history && npm run test:integration && npm run test:integration-backfill && npm run test:integration-latest && npm run test:schema && npm run test:edge-cases && npm run test:filter-watchlist",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
     "test:visual:ui": "playwright test --ui"

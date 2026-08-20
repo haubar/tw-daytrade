@@ -76,5 +76,28 @@ assertEqual(
   'getPastTradingDayCandidates：應該同時跳過週末（01-03/01-04）跟元旦（01-01）'
 );
 
+// ---- isNonTradingDay 的 dynamicHolidays 參數（對應《後續修改清單》P4「交易日曆自動化」）----
+// 這是從 trading-calendar-cache.mjs 讀到的、自動同步的休市日集合。
+assertEqual(
+  isNonTradingDay(new Date(2026, 6, 7)),
+  false,
+  '沒有提供 dynamicHolidays 時，普通交易日的行為應該跟原本一樣（向後相容）'
+);
+assertEqual(
+  isNonTradingDay(new Date(2026, 6, 7), new Set(['2026-07-07'])),
+  true,
+  'dynamicHolidays 裡有這一天時，即使靜態表（EXCHANGE_HOLIDAYS_BY_YEAR）沒有這筆資料，也應該判定為非交易日'
+);
+assertEqual(
+  isNonTradingDay(new Date(2026, 0, 1), new Set()),
+  true,
+  '就算 dynamicHolidays 是空集合，靜態表本來就有的休市日（元旦）也不應該因此失效'
+);
+assertEqual(
+  isNonTradingDay(new Date(2026, 6, 4), new Set(['2026-07-05'])),
+  true,
+  'dynamicHolidays 跟週末判斷應該是「或」的關係：週末本身就該排除，不會因為 dynamicHolidays 裡沒有這天就被誤判成交易日'
+);
+
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

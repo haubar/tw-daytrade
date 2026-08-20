@@ -82,7 +82,7 @@ tw-daytrade-scanner/
 
 `backfill-backtest.mjs` 會重建每個歷史訊號日的四因子多方榜：使用該日前 5 個交易日計算量能、當日跳空與相對強弱、同日 TWSE T86 法人買賣超，然後以隔日開盤買入／收盤賣出結算 Top 10 等權重策略。
 
-為避免免費方案的 Function 逾時，每次最多回填 **3 個訊號日**。第一次打開：
+對 TWSE 的請求改成**依序（不並行）**發出，避免同時發出多個請求觸發 TWSE 的併發限制（實測過：候選日期並行分批抓取時，逾時率很高，完全湊不出一個回測窗口）；代價是單次呼叫耗時變長，所以每次最多回填 **1 個訊號日**。第一次打開：
 
 ```text
 https://你的站台.netlify.app/.netlify/functions/backfill-backtest
@@ -91,10 +91,12 @@ https://你的站台.netlify.app/.netlify/functions/backfill-backtest
 回應中的 `nextEndDate` 是下一批游標；把它帶入下一次網址即可一路往前補：
 
 ```text
-/.netlify/functions/backfill-backtest?endDate=YYYY-MM-DD&days=3
+/.netlify/functions/backfill-backtest?endDate=YYYY-MM-DD&days=1
 ```
 
-要回填約 6 個月（約 120 個交易日）需重複執行約 40 次。每次會依 `signalDate` 覆寫結果，所以中斷後可安全重跑同一批。
+**就算這批完全沒湊出任何回測窗口（例如 TWSE 逾時導致成功抓到的天數不夠），`nextEndDate` 也不會是 `null`**——會自動退回這批候選裡最舊的一天，讓下一次呼叫還能往前推進，不會卡住（這是實際踩過的 bug，已修正並補上測試）。
+
+要回填約 6 個月（約 120 個交易日）需重複執行約 120 次（改成依序打之後，速度比原本並行版本慢，但成功率更穩定）。每次會依 `signalDate` 覆寫結果，所以中斷後可安全重跑同一批。
 
 **資料覆蓋與限制**：此回填目前是 **TWSE-only**，使用量能／跳空／相對強弱／上市法人四因子；上櫃歷史行情、FinMind 歷史法人與歷史當沖資格尚未納入。歷史 TAIEX 目前以當日全市場加權漲跌幅代理值計算，與即時掃描在 TAIEX 抓取失敗時的降級邏輯一致。每筆結果都會標記 `marketCoverage: "TWSE-only"`，不可與全市場即時榜單混為相同覆蓋範圍。
 

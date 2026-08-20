@@ -1,4 +1,4 @@
-import { buildHistoricalBacktestWindows, parseBacktestDays, parseCursorDate } from '../lib/backtest-history.mjs';
+import { buildHistoricalBacktestWindows, parseBacktestDays, parseCursorDate, computeNextEndDate } from '../lib/backtest-history.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -17,6 +17,25 @@ assertEqual(parseBacktestDays('2'), 2, '合法 days 應保留');
 assertEqual(parseBacktestDays('9'), 3, '超過上限時應退回預設值');
 assertEqual(parseCursorDate('2026-08-10') instanceof Date, true, '合法 cursor 日期應可解析');
 assertEqual(parseCursorDate('2026/08/10'), null, '不合法 cursor 日期應拒絕');
+
+// ---- computeNextEndDate：真實踩過的 bug——0 個窗口時 nextEndDate 不該卡在 null ----
+const windowsFormed = buildHistoricalBacktestWindows(dates, 5); // 上面已驗證過會形成 1 個窗口
+assertEqual(
+  computeNextEndDate(windowsFormed, [new Date(2026, 7, 10)]),
+  '2026-08-07',
+  '有湊出窗口時，nextEndDate 應該是最舊那個窗口的訊號日（讓下一批從這裡繼續往前）'
+);
+assertEqual(
+  computeNextEndDate([], [new Date(2026, 7, 18), new Date(2026, 7, 17), new Date(2026, 7, 6)]),
+  '2026-08-06',
+  '真實踩過的 bug 案例：一個窗口都沒湊出來時（例如 TWSE 逾時導致成功天數不夠），' +
+    'nextEndDate 不應該是 null，而應該退回「這批候選裡最舊的一天」，讓下次呼叫還能往前推進'
+);
+assertEqual(
+  computeNextEndDate([], []),
+  null,
+  'candidates 也是空的時候（理論上不該發生，防呆處理），應該回傳 null 而不是拋出例外'
+);
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

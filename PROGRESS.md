@@ -1279,4 +1279,22 @@ README.md（已知限制、FinMind 診斷說明更新）
 
 **驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **301** 項案例全數通過（含新增的 23 個 trading-calendar 測試、7 個 trading-calendar-cache 測試、4 個 trading-day 的 dynamicHolidays 迴歸測試）；`npm run build` 成功。
 
+---
+
+## 階段 39：實際跑 backfill-backtest 發現的兩個問題，改成依序請求 + 修正 nextEndDate 卡死 bug
+
+**背景**：develop 併回 main 部署後，實際在正式環境呼叫一次 `backfill-backtest?endDate=2026-08-19&days=3`，暴露出兩個問題：
+
+1. **TWSE 併發請求逾時率很高**：9 個候選日期分 3 批、每批並行 3 個請求，結果 5 個逾時（`The operation was aborted due to timeout`），只成功 4 個，完全湊不出一個回測窗口（需要連續 7 天）。
+2. **`nextEndDate` 卡死 bug**：0 個窗口時，`nextEndDate` 回傳 `null`，使用者不知道下次要從哪個日期繼續打，回填流程直接卡住。
+
+**修正**：
+- `backfill-backtest.mjs`：把並行分批請求（`Promise.allSettled` + `BATCH_SIZE=3`）改成依序、一次一個對 TWSE 發請求，避免觸發併發限制。代價是單次呼叫耗時變長，因此把單次最多回填的訊號日數從 3 調降到 1，讓每次呼叫需要循序抓取的候選天數盡量少，降低整支 function 被 Netlify 執行逾時砍斷、連錯誤訊息都拿不到的風險
+- `backtest-history.mjs`：新增 `computeNextEndDate(windows, candidates)` 純函式，把「就算沒湊出任何窗口，也要退回這批候選裡最舊一天當下一個 endDate」的邏輯抽出來，方便測試；`trading-day.mjs` 的 `formatIsoDate` 順便 export 出來給這裡重用，不重複寫日期格式化邏輯
+- `_test-backtest-history.mjs`：新增 3 個測試案例，包含直接重現這次真實踩到的 bug 情境（0 個窗口時 nextEndDate 不應為 null）
+- README.md：更新回填章節的耗時估計（改依序後，補完約 6 個月資料需要約 120 次呼叫，而不是原本並行版本的約 40 次）
+
+**取捨說明**：改成依序請求後速度變慢，但穩定性優先——寧可多打幾次、每次都拿到明確的成功/失敗訊息，也不要並行搶資源導致大部分請求逾時、白跑一趟。
+
+**驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **304** 項案例全數通過（含新增的 3 個 computeNextEndDate 測試）；`npm run build` 成功。實際依序呼叫的效果因無法在開發環境連線真實 TWSE 驗證，需部署後由使用者實際觸發確認。
 

@@ -27,6 +27,40 @@ const missingQuote = evaluateOpenToCloseLong([{ code: 'D' }], [], { commissionRa
 assertEqual(missingQuote.executedCount, 0, '缺少執行日行情時不應產生假交易');
 assertEqual(missingQuote.skipped[0].code, 'D', '缺少行情的股票應列入 skipped 診斷資訊');
 
+// ---- unavailableMarkets：真實踩過的情境——執行日某個市場整個抓資料失敗時，
+// skipped 訊息應該區分「系統性市場資料源問題」跟「個股本身缺資料」----
+// 真實案例：昨天多方榜選到的是上櫃股票，今天上櫃端點逾時失敗（tpexResult 整批 reject），
+// 今天的 executionQuotes 完全沒有上櫃報價，導致這些股票全部被跳過。
+const marketOutageResult = evaluateOpenToCloseLong(
+  [
+    { code: 'E', market: 'TPEx', dayTradeEligible: true }, // 上櫃，今天上櫃資料源掛了
+    { code: 'F', market: 'TWSE', dayTradeEligible: true }, // 上市，個股本身就是沒資料（跟市場層級問題無關）
+  ],
+  [], // 今天完全沒有任何報價（模擬上櫃端點失敗、上市這邊剛好也沒查到F這檔的邊界情況）
+  { commissionRate: 0, taxRate: 0, unavailableMarkets: new Set(['TPEx']) }
+);
+assertEqual(
+  marketOutageResult.skipped.find((s) => s.code === 'E').reason,
+  '執行日當天「TPEx」市場資料抓取失敗，非個股本身問題',
+  '屬於當天整個市場資料源失敗的股票，skipped 原因應該明確標示是市場層級問題，不是個股異常'
+);
+assertEqual(
+  marketOutageResult.skipped.find((s) => s.code === 'F').reason,
+  '缺少有效的隔日開盤或收盤價格',
+  '不屬於當天失敗市場的股票，維持原本的通用訊息（避免過度歸因成市場問題，實際上可能真的是個股資料異常）'
+);
+// 沒有提供 unavailableMarkets 時（原本的呼叫方式），應該完全維持舊行為，不受影響
+const noMarketInfoResult = evaluateOpenToCloseLong(
+  [{ code: 'G', market: 'TPEx', dayTradeEligible: true }],
+  [],
+  { commissionRate: 0, taxRate: 0 }
+);
+assertEqual(
+  noMarketInfoResult.skipped[0].reason,
+  '缺少有效的隔日開盤或收盤價格',
+  '沒有提供 unavailableMarkets 時（向後相容），應維持原本的通用訊息'
+);
+
 const data = new Map();
 const store = { setJSON: async (key, value) => data.set(key, value), get: async (key) => data.get(key) ?? null };
 await saveBacktestResult({ signalDate: '2026-08-18', executionDate: '2026-08-19' }, store);

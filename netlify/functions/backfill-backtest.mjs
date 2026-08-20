@@ -1,5 +1,8 @@
-// 分批回填「上市市場」歷史回測。每次預設 3 個訊號日，回應 nextEndDate 後可繼續往前補。
+// 分批回填「上市市場」歷史回測。每次預設 1 個訊號日，回應 nextEndDate 後可繼續往前補。
 // 不含上櫃，因目前尚無已驗證的 TPEx 歷史行情與歷史法人資料來源。
+//
+// 對 TWSE 的請求改成依序（不並行）發出，避免同時發出多個請求觸發 TWSE 的併發限制
+// （實測過：9 個候選日期並行分批抓取時，5 個逾時、只成功 4 個，完全湊不出一個回測窗口）。
 
 import { fetchOneDay } from './lib/history.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
@@ -7,20 +10,21 @@ import { getPastTradingDayCandidates } from './lib/trading-day.mjs';
 import { screenWatchlists } from './lib/screen.mjs';
 import { evaluateOpenToCloseLong } from './lib/backtest.mjs';
 import { saveBacktestResult } from './lib/backtest-storage.mjs';
-import { buildHistoricalBacktestWindows, parseBacktestDays, parseCursorDate } from './lib/backtest-history.mjs';
+import { buildHistoricalBacktestWindows, parseBacktestDays, parseCursorDate, computeNextEndDate } from './lib/backtest-history.mjs';
 import { DEFAULT_HISTORY_WINDOW_DAYS } from './lib/volume-archive.mjs';
 
-const MAX_SIGNAL_DAYS_PER_RUN = 3;
+// 改成依序（不並行）打 TWSE，避免觸發併發請求限制；代價是單次呼叫的總耗時變長，
+// 所以把單次最多回填的訊號日數從 3 調降到 1，讓每次呼叫需要循序抓取的候選天數
+// （days + DEFAULT_HISTORY_WINDOW_DAYS + 1）盡量少，降低整支 function 自己被 Netlify
+// 執行逾時砍斷、連 JSON 錯誤訊息都拿不到的風險——調降前 days=3 时最多要循序抓 9 天，
+// 若多筆逾時，總耗時可能超過 60 秒；調降後最多只需循序抓 7 天，安全邊際大很多。
+// 想加快整體回填進度，用 nextEndDate 多呼叫幾次即可，不需要一次要求更多天數。
+const MAX_SIGNAL_DAYS_PER_RUN = 1;
 const TOP_N = 10;
-const BATCH_SIZE = 3;
 
 function dateFromIso(isoDate) {
   const [year, month, day] = isoDate.split('-').map(Number);
   return new Date(year, month - 1, day);
-}
-
-function chunk(items, size) {
-  return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
 }
 
 function buildVolumeHistory(historyDays) {
@@ -47,17 +51,22 @@ export default async (req) => {
     const candidates = getPastTradingDayCandidates(cursorDate, days + DEFAULT_HISTORY_WINDOW_DAYS + 1);
     const snapshots = [];
     const debugInfo = [];
-    for (const batch of chunk(candidates, BATCH_SIZE)) {
-      const settled = await Promise.allSettled(batch.map((date) => fetchOneDay(date)));
-      settled.forEach((result, index) => {
-        const candidate = batch[index];
-        if (result.status === 'fulfilled' && result.value.actualDate && result.value.quotes.length > 0) {
-          snapshots.push({ date: result.value.actualDate, quotes: result.value.quotes });
-          debugInfo.push({ candidateDate: candidate.toISOString().slice(0, 10), actualDate: result.value.actualDate, quoteCount: result.value.quotes.length, error: null });
+    // 改成一次一個、依序打（不是同時發 BATCH_SIZE 個並行請求）。實測發現 TWSE 端點在多個
+    // 並行請求下逾時率很高（例如 9 個候選裡並行請求 3 個一批，有 5 個逾時，只成功 4 個，
+    // 完全湊不出一個回測窗口），改成依序逐一請求雖然整體花的時間變長，但每一個請求都是
+    // 單獨對 TWSE 發出，不會互相搶資源觸發逾時，成功率明顯更穩定。
+    for (const candidate of candidates) {
+      try {
+        const result = await fetchOneDay(candidate);
+        if (result.actualDate && result.quotes.length > 0) {
+          snapshots.push({ date: result.actualDate, quotes: result.quotes });
+          debugInfo.push({ candidateDate: candidate.toISOString().slice(0, 10), actualDate: result.actualDate, quoteCount: result.quotes.length, error: null });
         } else {
-          debugInfo.push({ candidateDate: candidate.toISOString().slice(0, 10), actualDate: null, quoteCount: 0, error: result.status === 'rejected' ? result.reason.message : '回傳資料沒有有效交易日' });
+          debugInfo.push({ candidateDate: candidate.toISOString().slice(0, 10), actualDate: null, quoteCount: 0, error: '回傳資料沒有有效交易日' });
         }
-      });
+      } catch (e) {
+        debugInfo.push({ candidateDate: candidate.toISOString().slice(0, 10), actualDate: null, quoteCount: 0, error: e.message });
+      }
     }
 
     // 端點偶爾可能無視日期參數；以實際日期去重並維持由近到遠的候選順序。
@@ -87,13 +96,22 @@ export default async (req) => {
     }
 
     const oldestWindow = windows.at(-1);
+    // 就算這批完全沒湊出任何窗口，也不能讓 nextEndDate 卡在 null——那樣使用者不知道下次
+    // 要從哪個日期繼續打，回填流程就卡死在原地（見 computeNextEndDate 的說明，這是真實
+    // 發生過的 bug）。
+    const nextEndDate = computeNextEndDate(windows, candidates);
+
     return new Response(JSON.stringify({
       message: `歷史回測回填完成：成功結算 ${results.filter((result) => !result.skipped).length}/${windows.length} 個訊號日（上市市場）`,
       requestedSignalDays: days,
       completed: results,
       debugInfo,
-      nextEndDate: oldestWindow?.signal.date ?? null,
-      instruction: oldestWindow ? '以 nextEndDate 再呼叫一次即可繼續往前回填；每次最多 3 個訊號日。' : '資料不足以形成回測窗口，請檢查 debugInfo。',
+      nextEndDate,
+      instruction: oldestWindow
+        ? '以 nextEndDate 再呼叫一次即可繼續往前回填；每次最多 1 個訊號日（改成依序打 TWSE 以降低逾時率，見檔頭說明）。'
+        : nextEndDate
+          ? `這批候選日期沒有湊出任何完整窗口（常見原因是 TWSE 逾時導致成功抓到的天數不夠，見 debugInfo 的 error 欄位），已自動把 nextEndDate 往前推到 ${nextEndDate}，用這個值再呼叫一次即可繼續，不會卡住。`
+          : '候選日期清單是空的，請檢查 endDate 參數是否正確。',
     }, null, 2), { headers: { 'content-type': 'application/json; charset=utf-8' } });
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'content-type': 'application/json; charset=utf-8' } });

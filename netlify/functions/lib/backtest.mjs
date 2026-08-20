@@ -15,15 +15,21 @@ function validPrice(value) {
 
 /**
  * 以等權重計算訊號日的多方榜，在執行日開盤買入、收盤賣出的單日績效。
- * @param {Array<{code:string, name?:string, dayTradeEligible?:boolean|null}>} signalItems
+ * @param {Array<{code:string, name?:string, market?:string, dayTradeEligible?:boolean|null}>} signalItems
  * @param {Array<{code:string, name?:string, open:number, close:number}>} executionQuotes
- * @param {{topN?:number, commissionRate?:number, taxRate?:number}} [options]
+ * @param {{topN?:number, commissionRate?:number, taxRate?:number, unavailableMarkets?:Set<string>}} [options]
+ *   unavailableMarkets：今天（執行日）完全抓不到報價的市場別（例如 TPEx 端點逾時失敗時傳入
+ *   new Set(['TPEx'])）。這是實際發生過的真實情況：昨天選出的多方榜如果剛好都是上櫃股票，
+ *   而今天上櫃資料源整個抓取失敗，這些股票在 executionQuotes 裡當然找不到報價，但這跟
+ *   「這幾檔股票本身資料異常」是完全不同的原因——前者是系統性、當天全市場都受影響，
+ *   後者才是真的要去查那一檔股票本身怎麼了。分開標示避免使用者誤判成個股層級的問題。
  */
 export function evaluateOpenToCloseLong(signalItems, executionQuotes, options = {}) {
   const {
     topN = DEFAULT_TOP_N,
     commissionRate = DEFAULT_COMMISSION_RATE,
     taxRate = DEFAULT_DAY_TRADE_TAX_RATE,
+    unavailableMarkets = new Set(),
   } = options;
 
   const quoteByCode = new Map((executionQuotes ?? []).map((quote) => [quote.code, quote]));
@@ -38,7 +44,10 @@ export function evaluateOpenToCloseLong(signalItems, executionQuotes, options = 
   for (const item of selected) {
     const quote = quoteByCode.get(item.code);
     if (!quote || !validPrice(quote.open) || !validPrice(quote.close)) {
-      skipped.push({ code: item.code, reason: '缺少有效的隔日開盤或收盤價格' });
+      const reason = item.market && unavailableMarkets.has(item.market)
+        ? `執行日當天「${item.market}」市場資料抓取失敗，非個股本身問題`
+        : '缺少有效的隔日開盤或收盤價格';
+      skipped.push({ code: item.code, reason });
       continue;
     }
 

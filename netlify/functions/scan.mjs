@@ -306,11 +306,20 @@ export default async (req) => {
         const signalDate = datesUsed[0];
         const signalScan = await getScanByDate(signalDate);
         if (signalScan?.longWatchlist?.length > 0) {
+          // 今天（執行日）如果有市場完全抓不到報價（例如上櫃端點逾時失敗），事先告訴
+          // evaluateOpenToCloseLong，讓它在 skipped 訊息裡分清楚「這是系統性資料源問題」
+          // 還是「這幾檔股票本身有問題」（見 backtest.mjs 的說明；這是實際發生過的真實案例：
+          // 昨天多方榜剛好選到上櫃股票，今天上櫃資料源整個失敗，10 檔全部被跳過，
+          // 原本的通用訊息會讓人誤以為是個股層級的異常）。
+          const unavailableMarkets = new Set();
+          if (tpexResult.status !== 'fulfilled') unavailableMarkets.add('TPEx');
+          if (twseResult.status !== 'fulfilled') unavailableMarkets.add('TWSE');
+
           const backtestResult = {
             signalDate,
             executionDate: todayDateStr,
             generatedAt: new Date().toISOString(),
-            ...evaluateOpenToCloseLong(signalScan.longWatchlist, todayQuotes),
+            ...evaluateOpenToCloseLong(signalScan.longWatchlist, todayQuotes, { unavailableMarkets }),
           };
           await saveBacktestResult(backtestResult);
           payload.backtest = backtestResult;

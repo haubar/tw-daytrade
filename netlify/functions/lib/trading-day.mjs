@@ -26,8 +26,14 @@ function formatIsoDate(date) {
   return `${y}-${m}-${d}`;
 }
 
-// 以 TWSE 官方公告的 2026 年交易日曆為基準，先把已知休市日列出。
-// 這份清單可以在每年年初更新，讓 getPastTradingDayCandidates 自動跳過非交易日。
+// 以 TWSE 官方公告的 2026 年交易日曆為基準，先把已知休市日列出，當作 dynamicHolidays
+// （見 isNonTradingDay）還沒同步到時的備援。
+//
+// 注意：這份表格是手動維護的，數字有可能跟 TWSE 之後修正/補充的官方公告有落差
+// （例如農曆春節確切涵蓋哪幾天，每年公告的確切日期需要以官方公告為準）——這正是
+// P4「交易日曆自動化」想解決的問題：往後應該以 sync-trading-calendar.mjs 自動抓到、
+// 存進 Blobs 的 dynamicHolidays 為主要依據，這份靜態表只當作最後一層備援，不用再
+// 花力氣手動核對更新，只要 sync 有跑過就會蓋過這份表格的資料。
 const EXCHANGE_HOLIDAYS_BY_YEAR = {
   2026: new Set([
     '2026-01-01',
@@ -58,6 +64,25 @@ export function isExchangeHoliday(date) {
   const holidaySet = EXCHANGE_HOLIDAYS_BY_YEAR[date.getFullYear()];
   if (!holidaySet) return false;
   return holidaySet.has(formatIsoDate(date));
+}
+
+/**
+ * 判斷某日是否不應寫入盤後歷史快照。
+ *
+ * 排程本身只用週一至週五的 cron，仍會在平日國定休市日觸發；若沒有這層判斷，
+ * 資料端點回傳的最近交易日行情會被以「休市日」重複保存，污染量能與相對強弱
+ * 的歷史窗口。
+ *
+ * @param {Date} date
+ * @param {Set<string>} [dynamicHolidays] 從 trading-calendar-cache.mjs 讀到的、自動同步的
+ *   休市日集合（'YYYY-MM-DD' 格式）。這是給 P4「交易日曆自動化」用的：EXCHANGE_HOLIDAYS_BY_YEAR
+ *   是手動維護的靜態表，每年要記得更新；dynamicHolidays 則是 sync-trading-calendar.mjs
+ *   自動從 TWSE 官方公告抓來、存進 Blobs 的資料，兩者取聯集——自動同步的資料優先參考，
+ *   靜態表當作自動同步還沒跑過、或當年度還沒同步到時的備援，不會因為某一邊沒資料就整個
+ *   判斷失效。預設空集合，維持完全向後相容：既有呼叫端不用改就能繼續運作。
+ */
+export function isNonTradingDay(date, dynamicHolidays = new Set()) {
+  return isWeekend(date) || isExchangeHoliday(date) || dynamicHolidays.has(formatIsoDate(date));
 }
 
 const TAIWAN_UTC_OFFSET_HOURS = 8;

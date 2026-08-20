@@ -23,6 +23,7 @@ export const sampleScanResult = {
   marketChangePercent: 0.82,
   marketChangePercentIsEstimate: false,
   totalCandidates: 1748,
+  backtest: null,
   twseCandidatesWithHistory: 980,
   tpexCandidatesWithHistory: 768,
   excludedNoHistory: 12,

@@ -5,6 +5,7 @@ import WatchlistPanel from './components/WatchlistPanel.vue';
 import FilterPanel from './components/FilterPanel.vue';
 import { sampleScanResult } from './sampleData.js';
 import { filterWatchlist, isFilterActive, DEFAULT_MIN_VOLUME_LOTS } from './utils/filterWatchlist.js';
+import { formatPercent } from './utils/format.js';
 
 const result = ref(null);
 const isSample = ref(false);
@@ -87,6 +88,16 @@ onMounted(loadData);
           已套用篩選：多方 {{ filteredLongWatchlist.length }}/{{ result.longWatchlist.length }} 檔 ·
           空方 {{ filteredShortWatchlist.length }}/{{ result.shortWatchlist.length }} 檔
         </p>
+
+        <section v-if="result.backtest" class="mb-4 rounded-md border border-hairline bg-panel p-4">
+          <h2 class="m-0 text-sm font-bold text-paper">基準回測｜前一日多方 Top {{ result.backtest.configuredTopN }}，隔日開盤買・收盤賣</h2>
+          <p class="mb-0 mt-2 font-mono text-[0.78rem] text-mute">
+            訊號日 {{ result.backtest.signalDate }} · 執行日 {{ result.backtest.executionDate }} · 成交 {{ result.backtest.executedCount }}/{{ result.backtest.selectedCount }} 檔 ·
+            毛報酬 {{ formatPercent(result.backtest.grossReturnPercent) }} · 淨報酬
+            <span :class="result.backtest.netReturnPercent >= 0 ? 'text-surge' : 'text-ebb'">{{ formatPercent(result.backtest.netReturnPercent) }}</span> ·
+            勝率 {{ formatPercent(result.backtest.winRatePercent) }}
+          </p>
+        </section>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <WatchlistPanel

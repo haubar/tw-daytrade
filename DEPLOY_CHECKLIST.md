@@ -109,6 +109,24 @@ https://你的站台.netlify.app/.netlify/functions/latest
 
 ---
 
+## 5.5. （選做）回填歷史策略績效
+
+這一步只回填**上市市場**的四因子基準策略，不含上櫃；每次最多處理 3 個訊號日，避免 Function 逾時。
+
+打開：
+```text
+https://你的站台.netlify.app/.netlify/functions/backfill-backtest
+```
+
+- [ ] 確認回應的 `completed` 有已結算項目，且每筆 `marketCoverage` 都是 `TWSE-only`
+- [ ] 保存 `nextEndDate`；要繼續往前補時，打開 `/.netlify/functions/backfill-backtest?endDate=<nextEndDate>&days=3`
+- [ ] 若 `completed` 有 `skipped`，先查看原因；T86 日期對不上時不會使用可能錯日的法人資料產生績效
+- [ ] 到 `/.netlify/functions/backtest-latest` 確認可讀取最新一筆回測結果
+
+回填約 6 個月約需重複執行 40 次；中斷後可從最後一個 `nextEndDate` 繼續。同一訊號日重跑會覆寫，不會重複累計。
+
+---
+
 ## 6. 檢查排程有沒有正確註冊
 
 Netlify 後台 → 你的站台 → **Functions** 分頁：

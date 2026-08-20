@@ -19,6 +19,14 @@
 - **三大法人買賣超（上櫃候選）**：[FinMind](https://finmindtrade.com/) `TaiwanStockInstitutionalInvestorsBuySell`，只對「第一輪觀察榜裡的上櫃股票」查詢（見下方「上櫃法人因子」說明），不是全市場
 - **TAIEX 指數**：TWSE OpenAPI `MI_INDEX`，抓取失敗時退回用全市場成交值加權平均漲跌幅估計
 
+## 基準回測（部署後自動累積）
+
+每個交易日掃描時，系統會以「前一交易日的多方觀察榜前 10 檔、等權重、隔日開盤買入並於收盤賣出」計算一筆基準績效。明確標記為不可現股當沖的上市股票會排除；缺少隔日開盤或收盤價格的股票會列為跳過，不會以假價格補值。
+
+預設成本採手續費 0.1425%（每一買賣側）與股票現股當沖賣出交易稅 0.15%；實際手續費折扣依券商與帳戶而異，因此淨報酬僅是保守參考。證交所說明股票現股當沖交易稅 0.15% 的優惠適用至 2027-12-31，部署後應在政策變更時更新設定。
+
+此功能從部署後開始每天累積。若要補回過去績效，可使用下方的 `backfill-backtest` 分批回填；其覆蓋範圍與限制請見「歷史回測回填」。
+
 ## 專案結構
 
 ```
@@ -48,13 +56,18 @@ tw-daytrade-scanner/
 └── netlify/functions/
     ├── scan.mjs                            # 【主要進入點】完整流程：抓取→讀取歷史累積庫→篩選→存入 Blobs
     ├── backfill-history.mjs               # 一次性手動補歷史資料工具（加速暖機，見下方說明）
+    ├── backfill-backtest.mjs              # 分批回填上市市場歷史回測（見下方說明）
+    ├── sync-trading-calendar.mjs          # 一次性手動同步 TWSE 官方交易日曆（見下方說明）
     ├── latest.mjs                           # 給前端呼叫：讀取 Blobs 裡最新一筆結果
+    ├── backtest-latest.mjs                # 讀取最新一筆基準／歷史回測結果
     ├── fetch-daily-quotes.mjs             # 輔助 function：只抓今日行情（除錯用）
     ├── tests/                               # 本地測試腳本（放子資料夾，避免被 Netlify 誤判成要部署的 Function）
     │   └── _test-*.mjs                       # 不連網路，用樣本/假資料驗證邏輯
     └── lib/
         ├── normalize.mjs                   # 資料正規化：把不同來源／格式轉成統一格式
         ├── trading-day.mjs                  # 共用交易日邏輯：判斷週末、國定假日、產生候選交易日清單
+        ├── trading-calendar.mjs             # 抓取並解析 TWSE 官方交易日曆公告
+        ├── trading-calendar-cache.mjs        # 交易日曆的 Blobs 快取層（sync-trading-calendar.mjs 寫入、scan.mjs 讀取）
         ├── history.mjs                     # 現場抓取多天歷史資料（僅 backfill-history.mjs 使用）
         ├── volume-archive.mjs               # 歷史成交量的 Blobs 累積儲存層（scan.mjs 實際使用的歷史資料來源）
         ├── taiex.mjs                        # 真實 TAIEX 指數抓取（MI_INDEX 端點）
@@ -64,6 +77,26 @@ tw-daytrade-scanner/
         ├── screen.mjs                      # 整合流程：串接以上模組，產生多方/空方觀察榜
         └── storage.mjs                      # Netlify Blobs 儲存層：存/讀最新結果與歷史備份
 ```
+
+## 歷史回測回填（上市市場）
+
+`backfill-backtest.mjs` 會重建每個歷史訊號日的四因子多方榜：使用該日前 5 個交易日計算量能、當日跳空與相對強弱、同日 TWSE T86 法人買賣超，然後以隔日開盤買入／收盤賣出結算 Top 10 等權重策略。
+
+為避免免費方案的 Function 逾時，每次最多回填 **3 個訊號日**。第一次打開：
+
+```text
+https://你的站台.netlify.app/.netlify/functions/backfill-backtest
+```
+
+回應中的 `nextEndDate` 是下一批游標；把它帶入下一次網址即可一路往前補：
+
+```text
+/.netlify/functions/backfill-backtest?endDate=YYYY-MM-DD&days=3
+```
+
+要回填約 6 個月（約 120 個交易日）需重複執行約 40 次。每次會依 `signalDate` 覆寫結果，所以中斷後可安全重跑同一批。
+
+**資料覆蓋與限制**：此回填目前是 **TWSE-only**，使用量能／跳空／相對強弱／上市法人四因子；上櫃歷史行情、FinMind 歷史法人與歷史當沖資格尚未納入。歷史 TAIEX 目前以當日全市場加權漲跌幅代理值計算，與即時掃描在 TAIEX 抓取失敗時的降級邏輯一致。每筆結果都會標記 `marketCoverage: "TWSE-only"`，不可與全市場即時榜單混為相同覆蓋範圍。
 
 ## 關於歷史資料：為什麼改成「每天累積」而不是「現場抓好幾天」
 
@@ -80,11 +113,26 @@ tw-daytrade-scanner/
 `history.mjs`（現場抓多天資料的舊邏輯）保留下來只給 `backfill-history.mjs` 使用，`scan.mjs` 本身已經不會呼叫它。
 
 **關於非交易日（週六日）與盤後時間**：
-- `scan.mjs` 如果在週末被手動觸發，TWSE 端點還是會回傳「最近一個交易日」的資料，但**不會**把這筆資料標記成「今天（週末）」寫進歷史累積庫——避免產生一筆假的非交易日資料，汙染量能異常因子的計算基礎
+- `scan.mjs` 如果在週末或交易所公告的休市日被手動或排程觸發，TWSE 端點仍可能回傳「最近一個交易日」的資料，但**不會**把這筆資料標記成「今天」寫進歷史累積庫——避免產生一筆假的非交易日資料，汙染量能異常因子的計算基礎
 - `scan.mjs` 如果在**台灣時間下午 2 點前**被觸發，同樣不會寫入歷史累積庫——台股 13:30 收盤，太早查詢可能拿到還沒最終確認的盤後資料。排程本身設定在台灣時間 14:10 觸發，本來就會過這個檢查，這個限制主要是防呆使用者提早手動觸發測試的情況
 - `backfill-history.mjs` 產生候選日期時就會跳過週六日，只找平日
 - 以上判斷邏輯都來自同一個共用模組 `lib/trading-day.mjs`，避免各處各自寫一份容易長出不一致的行為
-- 除了週末，也會排除已知的台股休市日（以 2026 年官方交易日曆為準，見 `lib/trading-day.mjs` 的 `EXCHANGE_HOLIDAYS_BY_YEAR`）。這不是完整的國定假日計算引擎，而是一份手動維護的休市日清單，每年需要更新一次；如果遇到清單裡沒有的年度或漏列的日子，`getPastTradingDayCandidates` 會安全地當作「不是假日」處理，候選範圍頂多多找幾輪，不會產生錯誤結果（因為最終還是會用「回傳資料本身的日期」驗證）
+- 除了週末，也會排除已知的台股休市日。判斷來源有兩層：**優先**用 `sync-trading-calendar.mjs` 自動同步下來、存在 Blobs 裡的官方交易日曆（見下方「交易日曆自動同步」章節），**備援**才用 `lib/trading-day.mjs` 裡手動維護的 `EXCHANGE_HOLIDAYS_BY_YEAR` 靜態表。如果兩邊都沒有涵蓋到（例如清單裡沒有的年度、或還沒同步過），`getPastTradingDayCandidates` 會安全地當作「不是假日」處理，候選範圍頂多多找幾輪，不會產生錯誤結果（因為最終還是會用「回傳資料本身的日期」驗證）
+
+## 交易日曆自動同步
+
+原本 `lib/trading-day.mjs` 的休市日清單（`EXCHANGE_HOLIDAYS_BY_YEAR`）是手動維護的，每年要記得更新，容易忘記。現在改成可以自動從 TWSE 官方公告同步：
+
+```bash
+# 部署後打開一次即可，通常一年跑個一兩次就夠（TWSE 通常在年底前會公告下一年度的交易日曆）
+https://你的站台.netlify.app/.netlify/functions/sync-trading-calendar
+```
+
+這支 function 會抓 TWSE OpenAPI 的 `/holidaySchedule/holidaySchedule` 端點（官方公告的開休市日期），解析出「真正的休市日」存進 Blobs（`lib/trading-calendar-cache.mjs`），依年度分開存放。`scan.mjs` 判斷「今天要不要把資料寫入歷史累積庫」時，會優先參考這裡同步下來的資料，`EXCHANGE_HOLIDAYS_BY_YEAR` 靜態表只在還沒同步過、或同步失敗時當備援，兩者是「或」的關係，不會互相蓋掉。
+
+**判斷規則需要留意**：TWSE 這份公告清單裡，不是每一筆都是「休市日」——也包含像「農曆春節前最後交易日」「國曆新年開始交易日」這種提醒用的資訊性公告，那幾天實際上**有交易**。`lib/trading-calendar.mjs` 的 `isActualHoliday()` 用「說明文字包含『放假』或『補假』」「名稱包含『無交易』」判斷是不是真正的休市日，已經用實際 API 回傳的樣本資料驗證過解析結果（見 `_test-trading-calendar.mjs`）。
+
+**目前只串接到 `scan.mjs` 的歷史累積庫寫入防呆**（決定今天要不要寫入 Blobs）；`getPastTradingDayCandidates`（`backfill-history.mjs`、`backfill-backtest.mjs` 挑選候選交易日時使用）目前仍只參考靜態表，還沒接上自動同步的資料——這是已知的後續改善項目，不影響現有功能正確性（因為這兩支 function 最終都會用「回傳資料本身的日期」再次驗證，不完全依賴候選日期猜測）。
 
 **如果 backfill-history 抓不到之前交易日的資料**：這支 function 的回應會附上 `debugInfo` 欄位，列出每個候選日期「送出去的參數」跟「實際拿回來的日期」，方便判斷問題出在哪：
 - 如果每筆 `actualDate` 都一樣 → 曾經實測發生過：原本用的 `www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?date=...` 端點不管 `date` 參數送哪一天，回傳的都是同一天資料，研判是 CDN 快取沒有把 `date` 算進快取鍵值。**已經改用 `MI_INDEX` 端點解決**（見下方說明），如果又遇到這個症狀，可能是 `MI_INDEX` 端點本身也開始出現同樣的問題，需要再進一步排查
@@ -169,9 +217,11 @@ Dashboard 上方有可拖曳的篩選面板：
 
 ## 如何在本機測試邏輯
 
+本專案需要 **Node.js 20.18.1 以上、23 以下**（版本已寫入 `.nvmrc` 與 `package.json`）。使用 nvm 時先執行 `nvm use`，再安裝依賴。
+
 ```bash
-npm install
-npm run test                # 跑全部測試（193 個案例，見 TEST_REPORT.md）
+npm ci
+npm run test                # 跑全部測試（目前 265 個案例；Node 20.18.1+）
 npm run test:fetch          # 資料正規化（JSON 格式）
 npm run test:history        # 歷史資料抓取邏輯（含日期去重）
 npm run test:factors        # 因子計算公式
@@ -183,6 +233,8 @@ npm run test:trading-day    # 交易日／週末判斷邏輯
 npm run test:taiex          # 真實 TAIEX 指數抓取與解析
 npm run test:finmind        # FinMind 上櫃法人資料抓取與解析
 npm run test:backfill-pick  # backfill-history 挑選新交易日的核心邏輯
+npm run test:backtest       # 基準回測報酬、成本與結果儲存
+npm run test:backtest-history # 歷史回測窗口與游標解析
 npm run test:integration    # 端對端整合測試（完整模擬 scan.mjs 真實執行流程）
 npm run test:integration-backfill # backfill-history.mjs 的整合測試
 npm run test:schema         # 前後端資料結構一致性檢查
@@ -192,6 +244,32 @@ npm run test:filter-watchlist # 前端篩選邏輯（成交量／股價／漲跌
 
 這些測試都只用寫死的樣本／假資料驗證邏輯對不對，不會真的連線抓資料，所以可以放心常常跑。
 
+## 前端視覺回歸測試
+
+用 [Playwright](https://playwright.dev/) 的截圖比對機制，抓前端疊代時不小心弄壞版面的問題（例如篩選面板改版擠壞、徽章顏色跑掉、手機版排版跑版），對應「前端 Dashboard 完全沒有自動化把關」這項已知限制。
+
+跟上面 `npm run test` 那組單元測試不同，視覺測試**不包含**在 `npm run test` 裡（需要真的裝瀏覽器執行檔，環境需求不同、跑起來也慢很多），要另外執行：
+
+```bash
+# 第一次執行前，需要先裝 Playwright 用的瀏覽器執行檔（只需要做一次）
+npx playwright install chromium
+
+# 第一次執行：建立基準截圖（之後每次比對都是跟這次存的圖比較）
+npm run test:visual:update
+
+# 之後疊代前端時，用這個確認畫面有沒有跑掉
+npm run test:visual
+
+# 想用瀏覽器介面互動式檢視每一步截圖比對結果，可以用
+npm run test:visual:ui
+```
+
+測試內容固定用 `sampleData.js` 的假資料（`tests/visual/dashboard.spec.js` 起 `vite preview` 的靜態伺服器，沒有 Netlify Functions，前端會自動退回範例資料），畫面內容穩定、不受今天股價影響，截圖比對才有意義。涵蓋：預設畫面、篩選面板互動後的畫面、單一觀察榜卡片的徽章特寫、手機版排版。
+
+基準截圖（`tests/visual/**/*-snapshots/`）需要進版控，這樣其他人 clone 下來執行 `npm run test:visual` 才有東西可以比對；`.gitignore` 已經排除掉執行過程的暫存產物（`test-results/`、`playwright-report/`），只有基準圖本身會進版控。
+
+**已知限制**：這份程式碼是在一個網路白名單受限的容器環境裡寫的，沒辦法下載 Playwright 的瀏覽器執行檔（`cdn.playwright.dev` 不在允許清單），所以設定檔跟測試案例本身雖然已經寫好、邏輯確認沒問題，但**基準截圖還沒有真的產生過**，需要你在本機或 CI（例如 GitHub Actions，那邊網路沒有限制）執行一次 `npm run test:visual:update` 才會有基準圖可以比對。**第一次產生基準圖之後，務必人工打開 `tests/visual/**/*-snapshots/` 裡的圖檔看過一次**，確認畫面真的長得對，而不是無條件相信它——截圖比對只能抓「跟基準圖不一樣」，沒辦法幫你判斷「基準圖本身有沒有問題」。
+
 ## 如何部署到 Netlify
 
 1. 把整個資料夾 push 到你的 GitHub repo
@@ -200,13 +278,14 @@ npm run test:filter-watchlist # 前端篩選邏輯（成交量／股價／漲跌
    - 瀏覽器打開 `https://你的站台.netlify.app/.netlify/functions/scan` 手動觸發一次完整流程（抓取→計算→存入 Blobs），會看到當次算出來的候選名單 JSON
    - 之後打開 `https://你的站台.netlify.app/.netlify/functions/latest` 可以快速讀到「最新一次」存起來的結果，不會重新抓資料，回應更快，前端 Dashboard 會呼叫這支
    - 也可以打開 `/.netlify/functions/fetch-daily-quotes` 只看今日行情抓取結果，方便除錯
+   - 如需補回歷史策略績效，依「歷史回測回填」章節手動觸發 `/.netlify/functions/backfill-backtest`
 
 ## 已知限制
 
 - **TPEx（上櫃）欄位驗證進度**：欄位名稱本身有猜對（沒有拋出「欄位對應失敗」的例外），但部署後發現一個資料品質問題——`tpex_mainboard_daily_close_quotes` 回傳的清單混雜了大量權證（Warrant），導致「4644 檔」這種遠高於真實上櫃股票數（約 800 檔）的異常結果。**根因已找到並修正**（見 PROGRESS.md 階段 32）：已加入 `isWarrant` 過濾（見 `normalize.mjs`，依代碼位數＋名稱關鍵字判斷），TWSE／TPEx 兩邊抓取都套用。過濾後的實際檔數仍待下一次部署確認是否落回合理範圍。
 - **上櫃法人資料（FinMind）尚未經過真實請求驗證**：程式碼是照官方文件格式撰寫的，見上方「上櫃法人因子的兩階段設計」說明。只對「第一輪觀察榜裡的上櫃股票」查詢，不是全市場——如果一檔上櫃股票沒有進第一輪觀察榜的前段，它的法人因子會維持中性值，不會被 FinMind 補強。先前上櫃候選數量一直是 0，已排查出根因是「權證污染候選池」（見上一項、PROGRESS.md 階段 32），過濾修正後**尚待重新部署驗證**是否真的能查到有效的法人資料。
 - **免費 API 無官方使用授權**：抓取頻率過高可能被限流，設計上以「盤後跑一次」為主，避免高頻呼叫。
-- **部署前置需求（階段 33 已清理，push 前務必確認）**：`netlify/functions/` 頂層過去曾殘留重複的測試檔案（含一個帶 top-level await 的孤兒檔案），會導致 Netlify build 失敗（`Top-level await is currently not supported with the "cjs" output format`）。目前已清乾淨，頂層只留 4 個真正的 Function（`scan.mjs`／`backfill-history.mjs`／`latest.mjs`／`fetch-daily-quotes.mjs`）＋ `lib/`／`tests/` 兩個子資料夾，測試腳本一律放在 `netlify/functions/tests/`。之後新增任何 `_test-*.mjs` 都要記得放進 `tests/` 子資料夾，不要放在 `netlify/functions/` 頂層。
+- **部署前置需求（階段 33 已清理，push 前務必確認）**：`netlify/functions/` 頂層過去曾殘留重複的測試檔案（含一個帶 top-level await 的孤兒檔案），會導致 Netlify build 失敗（`Top-level await is currently not supported with the "cjs" output format`）。目前頂層只放真正要部署的 Function（`scan.mjs`／`backfill-history.mjs`／`backfill-backtest.mjs`／`latest.mjs`／`backtest-latest.mjs`／`fetch-daily-quotes.mjs`）與 `lib/`／`tests/` 子資料夾；測試腳本一律放在 `netlify/functions/tests/`，不可放在頂層。
 
 ## 新手教學
 

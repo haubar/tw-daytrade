@@ -1189,3 +1189,94 @@ README.md（已知限制、FinMind 診斷說明更新）
 已刪除：netlify/functions/_test-*.mjs（19 個，含孤兒檔 _test-market-index.mjs）
 已刪除：netlify/functions/lib/csv.mjs
 ```
+
+---
+
+## 階段 34：補強交易日寫入防呆與本機執行環境（本階段）
+
+**目標**：處理程式碼盤點發現的兩項交付缺口：平日休市日仍可能被排程寫入歷史資料，以及專案沒有明確宣告 Node 版本，導致在 Node 18 安裝後無法執行完整測試。
+
+**完成事項**：
+1. `trading-day.mjs` 新增 `isNonTradingDay`，統一判斷週末與交易所公告的休市日。
+2. `scan.mjs` 寫入歷史快照前改用 `isNonTradingDay`；排程雖只在週一至週五觸發，但遇到平日休市日也不會將最近交易日資料重複標記為休市日存入 Blobs。
+3. `tests/_test-trading-day.mjs` 新增週末、平日休市日與正常交易日三個回歸案例。
+4. 新增 `.nvmrc` 並在 `package.json` 宣告 Node `>=20.18.1 <23`；README 同步標示安裝與測試的版本前提。
+5. 修正測試數量文件：目前 `npm run test` 共 248 個案例，`TEST_REPORT.md` 的 87 個案例保留為階段 12 的歷史快照。
+
+**驗證方式**：以 Node 20.20.2 執行 `npm test`，248 個案例全數通過。前端建置仍須在乾淨、以 Node 20 安裝的依賴目錄下執行；若曾用 Node 18 安裝，Tailwind 原生 optional dependency 可能缺失，應先刪除 `node_modules` 後用 Node 20 執行 `npm ci`。
+
+---
+
+## 階段 35：基準策略績效追蹤（本階段）
+
+**策略規格**：前一交易日多方觀察榜前 10 檔、等權重，隔日開盤買入並於收盤賣出；排除明確不可現股當沖的上市股票。預設以買賣雙邊 0.1425% 手續費和賣出 0.15% 當沖交易稅計算淨報酬。
+
+**完成事項**：
+1. 新增 `lib/backtest.mjs`，負責交易可執行性、毛／淨報酬、勝率與缺價跳過診斷。
+2. 新增 `lib/backtest-storage.mjs`，按訊號日覆寫保存績效，避免同一天重跑被重複累加。
+3. `scan.mjs` 讀取前一交易日的觀察榜，以當日行情自動結算，並將結果存入最新掃描資料。
+4. Dashboard 顯示最近一筆基準回測摘要。
+5. 新增 9 項單元測試；目前 `npm run test` 共 257 項案例。
+
+**限制**：此功能從部署後開始逐日累積，並非多年歷史回測；完整歷史回測仍需要取得並回填每個訊號日的完整因子資料與下一交易日 OHLC。
+
+---
+
+## 階段 36：上市市場歷史回測分批回填（本階段）
+
+**目標**：補回部署前沒有累積到的策略績效，但不將超過 Netlify 免費方案執行時間的工作塞進單次 Function。
+
+**策略與資料範圍**：每個歷史訊號日以其前 5 個交易日計算量能、當日跳空／相對強弱／T86 三大法人買賣超，取多方榜前 10 檔等權重，隔日開盤買入、收盤賣出。資料範圍明確限制為 `TWSE-only`；上櫃歷史行情／法人、歷史當沖資格與真實歷史 TAIEX 尚未納入。
+
+**完成事項**：
+1. 新增 `lib/backtest-history.mjs`，把由近到遠的交易日快照組成「隔日執行 + 訊號日 + 5 日歷史」的無前視窗口，並驗證游標日期與批次上限。
+2. 新增 `backfill-backtest.mjs`：每次最多回填 3 個訊號日、每批最多 3 個行情請求；回應 `nextEndDate` 讓使用者可以手動續跑至 6 個月前。
+3. 每筆回填前都驗證 T86 回傳的實際日期必須等於訊號日；對不上時跳過並回報，不用錯日法人資料產生看似合理的假績效。
+4. 新增 `backtest-latest.mjs`，可單獨讀取最近一筆基準或歷史回測結果。
+5. README 與 DEPLOY_CHECKLIST 補上操作方式、覆蓋範圍與續跑規則。
+
+**驗證方式**：新增 `_test-backtest-history.mjs` 8 項案例；以 Node 20.20.2 執行 `npm run test`，目前共 **265** 項案例全數通過。
+
+**待部署驗證**：`backfill-backtest.mjs` 會對真實 TWSE 歷史行情與 T86 發出多次請求，雖已沿用既有的分批與實際日期驗證模式，仍需在 Netlify 確認每批可在 30 秒內完成，再依 `nextEndDate` 逐批續跑。
+
+---
+
+## 階段 37：QA 覆盤階段 35/36，修正 latest 指標覆寫 bug + 補上缺少的 .nvmrc
+
+**背景**：接手繼續開發前，先重新核對過階段 33～36 的實際交付狀態（跑一次 `npm run test`、`npm run build`），而不是只信任 PROGRESS.md 的敘述——這是先前階段 29/30/32 反覆出現「文件宣稱完成但實際沒有」問題後養成的習慣。
+
+**發現並修正的問題**：
+1. **真實 bug（不是文件落差）**：`backfill-backtest.mjs` 依「訊號日由近到遠」依序呼叫 `saveBacktestResult()`，但該函式原本無條件覆寫 `latest` 指標，導致迴圈跑完後 `latest` 停在這批裡「最舊」的一天。用重現腳本實際驗證過（3 個訊號日依序寫入，跑完後 latest 錯誤地停在最舊的一天），確認是真的 bug 才動手修。修法：`saveBacktestResult()` 只在新結果的訊號日 `>=` 目前 latest 的訊號日時才更新 latest。新增 2 個迴歸測試涵蓋這個情境。
+2. **文件與實際不符（再次發生）**：階段 34 宣稱新增了 `.nvmrc`，但檔案實際不存在。已補上（`20.18.1`，對應 `package.json` 的 `engines` 欄位）。
+
+**完成事項（本階段接續完成的新功能）**：
+3. 新增前端視覺回歸測試機制（對應《後續修改清單》P3「前端視覺回歸檢查機制」）：
+   - `playwright.config.js`：Playwright 設定，固定用 `sampleData.js` 假資料截圖比對，涵蓋桌面與手機兩種裝置
+   - `tests/visual/dashboard.spec.js`：4 個測試案例（預設畫面、篩選面板互動後、觀察榜卡片徽章特寫、手機版排版）
+   - `package.json` 新增 `test:visual`／`test:visual:update`／`test:visual:ui` 指令，刻意不放進 `npm run test` 主測試鏈（需要真的裝瀏覽器執行檔，環境需求不同）
+   - README 新增「前端視覺回歸測試」章節說明如何使用
+
+**已知限制**：開發這份程式碼的容器環境網路白名單沒有開放 `cdn.playwright.dev`（Playwright 瀏覽器執行檔下載來源），無法在該環境內實際安裝瀏覽器、執行測試、或產生基準截圖。設定檔與測試案例邏輯已確認沒問題，但**基準截圖還沒有真的產生過**，需要在本機或 CI（例如 GitHub Actions）執行 `npm run test:visual:update` 才能建立，且第一次產生後務必人工檢查截圖內容是否正確。
+
+**驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **267** 項案例全數通過（含新增的 2 個 backtest 迴歸測試）；`npm run build` 成功。視覺回歸測試因上述網路限制，未能在本環境實際執行，邏輯已人工覆核。
+
+---
+
+## 階段 38：交易日曆自動同步（P4「交易日曆自動化」）
+
+**背景**：`trading-day.mjs` 的 `EXCHANGE_HOLIDAYS_BY_YEAR` 是手動維護的休市日清單，只到 2026 年，每年需要記得手動更新，屬於容易被遺忘的維運債。
+
+**資料源調查**：實際呼叫過 `https://openapi.twse.com.tw/v1/holidaySchedule/holidaySchedule`（TWSE 官方開休市日期公告端點），取得真實回傳格式作為測試樣本，不是憑空編造。這份清單有個容易忽略的陷阱：不是每一筆都是「休市日」，還混雜了「農曆春節前最後交易日」「國曆新年開始交易日」這類**有交易**、只是想提醒使用者的資訊性公告，必須靠 `Description`（是否含「放假」/「補假」）跟 `Name`（是否含「無交易」）分辨——過程中第一版判斷規則漏掉了「補假」的情況（和平紀念日的補假說明文字只寫「補假」不寫「放假」），寫真實樣本測試時抓到，已修正。
+
+**完成事項**：
+1. `trading-calendar.mjs`（新檔案）：`fetchExchangeHolidays()` 抓取並解析官方公告，回傳「真正的休市日」`Set`；`rocDateToIso()` 把民國日期字串轉西元格式；純函式 `isActualHoliday()`／`parseHolidayScheduleRows()` 拆出來方便用真實樣本測試，不用連網路
+2. `trading-calendar-cache.mjs`（新檔案）：仿照 `volume-archive.mjs` 的 Blobs 儲存模式，依年度存取休市日集合。刻意讓「沒查過」（回傳 `null`）跟「查過但這年真的沒有休市日」（回傳空集合）語意不同，呼叫端可以正確判斷要不要退回靜態表
+3. `sync-trading-calendar.mjs`（新 Netlify Function）：一次性手動觸發（仿照 `backfill-history.mjs` 的操作方式），抓取並依年度分組寫入 Blobs 快取
+4. `trading-day.mjs`：`isNonTradingDay()` 新增可選的 `dynamicHolidays` 參數（預設空集合），跟原本的靜態表判斷是「或」的關係——完全向後相容，既有呼叫端不用改
+5. `scan.mjs`：串接自動同步的日曆資料，寫入歷史累積庫前優先參考這份資料，讀取失敗時優雅退回只用靜態表，不影響主流程
+
+**已知限制**：目前只串接到 `scan.mjs` 的歷史累積庫寫入防呆；`getPastTradingDayCandidates`（`backfill-history.mjs`、`backfill-backtest.mjs` 用來挑選候選交易日）暫時還是只參考靜態表，尚未接上自動同步的資料——這兩支 function 最終都會用「回傳資料本身的日期」再次驗證，不完全依賴候選日期猜測，所以這個限制不影響現有功能的正確性，只是還沒發揮自動同步的完整效益，留待後續疊代。
+
+**驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **301** 項案例全數通過（含新增的 23 個 trading-calendar 測試、7 個 trading-calendar-cache 測試、4 個 trading-day 的 dynamicHolidays 迴歸測試）；`npm run build` 成功。
+
+

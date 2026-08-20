@@ -1,7 +1,7 @@
 // netlify/functions/_test-trading-day.mjs
 // 執行方式：npm run test:trading-day
 
-import { isWeekend, formatDateParam, getPastTradingDayCandidates, isMarketDataReady, isExchangeHoliday } from '../lib/trading-day.mjs';
+import { isWeekend, formatDateParam, getPastTradingDayCandidates, isMarketDataReady, isExchangeHoliday, isNonTradingDay } from '../lib/trading-day.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -60,6 +60,11 @@ assertEqual(isExchangeHoliday(new Date(2026, 0, 2)), false, 'isExchangeHoliday�
 // 清單裡沒有資料的年度（例如 2027），應該安全回傳 false，而不是拋出例外或誤判成假日
 assertEqual(isExchangeHoliday(new Date(2027, 0, 1)), false, 'isExchangeHoliday：清單裡沒有的年度應安全回傳 false，不拋出例外');
 
+// ---- isNonTradingDay：scan.mjs 寫入歷史快照前的共用防呆 ----
+assertEqual(isNonTradingDay(new Date(2026, 6, 4)), true, 'isNonTradingDay：週末不應寫入歷史快照');
+assertEqual(isNonTradingDay(new Date(2026, 0, 1)), true, 'isNonTradingDay：平日國定休市日不應寫入歷史快照');
+assertEqual(isNonTradingDay(new Date(2026, 0, 2)), false, 'isNonTradingDay：普通交易日可以寫入歷史快照');
+
 // ---- getPastTradingDayCandidates 應該同時跳過週末跟已知的國定假日 ----
 // 2026-01-06（星期二）往回推：01-05（一）候選 → 01-04(日)/01-03(六) 跳過週末
 // → 01-02（五）候選 → 01-01（四，元旦，國定假日）跳過 → 2025-12-31（三）候選...
@@ -69,6 +74,29 @@ assertEqual(
   holidayAwareCandidates,
   ['20260105', '20260102', '20251231', '20251230', '20251229'],
   'getPastTradingDayCandidates：應該同時跳過週末（01-03/01-04）跟元旦（01-01）'
+);
+
+// ---- isNonTradingDay 的 dynamicHolidays 參數（對應《後續修改清單》P4「交易日曆自動化」）----
+// 這是從 trading-calendar-cache.mjs 讀到的、自動同步的休市日集合。
+assertEqual(
+  isNonTradingDay(new Date(2026, 6, 7)),
+  false,
+  '沒有提供 dynamicHolidays 時，普通交易日的行為應該跟原本一樣（向後相容）'
+);
+assertEqual(
+  isNonTradingDay(new Date(2026, 6, 7), new Set(['2026-07-07'])),
+  true,
+  'dynamicHolidays 裡有這一天時，即使靜態表（EXCHANGE_HOLIDAYS_BY_YEAR）沒有這筆資料，也應該判定為非交易日'
+);
+assertEqual(
+  isNonTradingDay(new Date(2026, 0, 1), new Set()),
+  true,
+  '就算 dynamicHolidays 是空集合，靜態表本來就有的休市日（元旦）也不應該因此失效'
+);
+assertEqual(
+  isNonTradingDay(new Date(2026, 6, 4), new Set(['2026-07-05'])),
+  true,
+  'dynamicHolidays 跟週末判斷應該是「或」的關係：週末本身就該排除，不會因為 dynamicHolidays 裡沒有這天就被誤判成交易日'
 );
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);

@@ -29,8 +29,11 @@ import { fetchFinMindInstitutionalNetBuy } from './lib/finmind.mjs';
 import { fetchTaiexChangePercent } from './lib/taiex.mjs';
 import { fetchDayTradeEligibleCodes } from './lib/day-trade-eligibility.mjs';
 import { screenWatchlists, getTpexCandidateCodes } from './lib/screen.mjs';
-import { saveLatestScan } from './lib/storage.mjs';
-import { isWeekend, isMarketDataReady } from './lib/trading-day.mjs';
+import { getScanByDate, saveLatestScan } from './lib/storage.mjs';
+import { evaluateOpenToCloseLong } from './lib/backtest.mjs';
+import { saveBacktestResult } from './lib/backtest-storage.mjs';
+import { isNonTradingDay, isMarketDataReady } from './lib/trading-day.mjs';
+import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
 
 const TWSE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
 const TPEX_URL = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes';
@@ -116,9 +119,22 @@ export default async (req) => {
     // 這樣會產生一筆假的非交易日資料，汙染量能異常因子的計算基礎（週五的量能會被誤算成
     // 「這是週末當天的量能」，跟真正的週五那天分開計算，導致同一份資料被扭曲成兩筆不同的天）。
     // 這一步失敗（或跳過）不應該讓整個掃描失敗，獨立包 try/catch。
+    //
+    // dynamicHolidays 是 sync-trading-calendar.mjs 自動同步下來的官方休市日（見
+    // trading-calendar-cache.mjs），比 trading-day.mjs 裡手動維護的靜態表更即時、更不容易
+    // 因為忘記手動更新而過期。讀取失敗（例如還沒同步過、Blobs 連線問題）優雅退回空集合，
+    // isNonTradingDay 本身還是會用靜態表當備援，不會讓整個判斷失效。
+    let dynamicHolidays = new Set();
+    try {
+      const now = new Date();
+      dynamicHolidays = await getExchangeHolidaysForYears([now.getFullYear(), now.getFullYear() + 1]);
+    } catch {
+      // 讀取失敗就當作沒有自動同步的資料，靜態表依然有效，不影響主流程
+    }
+
     let archiveWarning = null;
-    if (isWeekend(new Date())) {
-      archiveWarning = '今天是非交易日（週末），不寫入歷史累積庫，避免產生無效的交易日資料';
+    if (isNonTradingDay(new Date(), dynamicHolidays)) {
+      archiveWarning = '今天是非交易日（週末或交易所休市日），不寫入歷史累積庫，避免產生無效的交易日資料';
     } else if (!isMarketDataReady(new Date())) {
       // 台股 13:30 收盤，太早查詢可能拿到還沒最終確認的盤後資料，先不寫進歷史累積庫，
       // 避免把不準確的資料當成「今天的正式收盤資料」存下來，之後拿來算量能異常因子會失真。
@@ -279,8 +295,31 @@ export default async (req) => {
       excludedNoHistory: result.excludedNoHistory,
       longWatchlist: result.longWatchlist,
       shortWatchlist: result.shortWatchlist,
+      backtest: null,
       disclaimer: '本結果僅供參考，不構成投資建議。當沖有資格與風險限制，請自行評估。',
     };
+
+    // 基準回測：最近一個訊號日收盤後的多方榜，於今天開盤買入、收盤賣出。
+    // 同一天重跑時會依 signalDate 覆蓋，避免同一筆績效被重複累加。
+    if (datesUsed.length > 0) {
+      try {
+        const signalDate = datesUsed[0];
+        const signalScan = await getScanByDate(signalDate);
+        if (signalScan?.longWatchlist?.length > 0) {
+          const backtestResult = {
+            signalDate,
+            executionDate: todayDateStr,
+            generatedAt: new Date().toISOString(),
+            ...evaluateOpenToCloseLong(signalScan.longWatchlist, todayQuotes),
+          };
+          await saveBacktestResult(backtestResult);
+          payload.backtest = backtestResult;
+        }
+      } catch (e) {
+        // 回測紀錄是輔助資訊，不能讓正常的盤後掃描失敗。
+        payload.backtestWarning = `基準回測紀錄失敗（不影響本次選股結果）: ${e.message}`;
+      }
+    }
 
     // 存進 Netlify Blobs，這樣排程自動執行的結果才有地方可以查（前端會呼叫 latest.mjs 讀取）。
     // 存檔失敗不應該讓整個請求失敗——使用者手動打開這支 function 時，還是想看到當次算出來的結果，

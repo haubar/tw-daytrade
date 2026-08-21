@@ -1,7 +1,7 @@
 <script setup>
-// HistoryPanel.vue — 隱藏的「歷史資料列表」面板。使用者按任一方向鍵（↑↓←→）才會叫出來，
-// 平常不會出現在畫面上，避免干擾一般使用流程；主要給比較想了解資料累積現況的使用者，
-// 或開發除錯時用。
+// HistoryPanel.vue — 隱藏的「歷史資料列表」面板。使用者依序按「上→下→左→右」（順序不能錯）
+// 才會叫出來，平常不會出現在畫面上，避免干擾一般使用流程；主要給比較想了解資料累積現況的
+// 使用者，或開發除錯時用。
 //
 // 顯示內容：合併「哪幾天有成功抓到每日行情快照」（volume-archive，只留最近15天）跟
 // 「哪幾天有回測結果」（backtest-storage，留最近260天）——見後端 history-index.mjs 的說明，
@@ -9,12 +9,18 @@
 
 import { ref, onUnmounted, watch } from 'vue';
 import { formatPercent } from '../utils/format.js';
+import { advanceSequence } from '../utils/keySequence.js';
 
 const isOpen = ref(false);
 const isLoading = ref(false);
 const loadError = ref(null);
 const items = ref([]);
 const hasLoadedOnce = ref(false);
+
+// 必須照這個順序（上→下→左→右）依序按對，面板才會出現，隨便按方向鍵沒有用。
+// 這是刻意設計成不容易誤觸的隱藏功能，不是「按任一個方向鍵」那麼寬鬆。
+const REQUIRED_SEQUENCE = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+const sequenceProgress = ref(0); // 用 ref 而不是模組層級變數，避免元件被多次掛載時互相污染進度
 
 async function loadHistoryIndex() {
   if (hasLoadedOnce.value) return; // 開過一次之後不重複打 API，除非使用者手動重新整理頁面
@@ -34,21 +40,29 @@ async function loadHistoryIndex() {
 }
 
 function handleKeydown(e) {
-  // 只有方向鍵才觸發，其他按鍵（例如使用者正在輸入文字時按到方向鍵切換游標）不受影響；
-  // 如果焦點在輸入框/下拉選單裡，方向鍵應該保留原本的用途（移動游標、切選項），
-  // 不應該被這個全域監聽器攔截去開歷史面板。
-  const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
+  // 只有方向鍵才處理，其他按鍵完全忽略，不會打斷已經按對的序列進度
+  // （例如中途不小心按到 Tab，不應該讓「已經按對上、下」的進度歸零）。
+  const isArrowKey = REQUIRED_SEQUENCE.includes(e.key);
   if (!isArrowKey) return;
+
+  // 如果焦點在輸入框/下拉選單裡（包含 FilterPanel.vue 的股價/成交量/漲跌幅滑桿，
+  // 那些 <input type="range"> 原生就是用方向鍵調整數值），方向鍵應該保留原本的用途，
+  // 不能被這個全域監聽器攔截去累計序列進度，也不能因此打斷使用者原本在做的操作。
   const target = e.target;
   const isEditableTarget = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT' || target?.isContentEditable;
   if (isEditableTarget) return;
 
-  isOpen.value = true;
-  loadHistoryIndex();
+  const { progress, completed } = advanceSequence(e.key, sequenceProgress.value, REQUIRED_SEQUENCE);
+  sequenceProgress.value = progress;
+  if (completed) {
+    isOpen.value = true;
+    loadHistoryIndex();
+  }
 }
 
 function close() {
   isOpen.value = false;
+  sequenceProgress.value = 0;
 }
 
 // Esc 關閉面板。這是「面板開啟後」才需要的行為，跟「用方向鍵叫出面板」是分開的兩件事
@@ -83,7 +97,7 @@ const netReturnColorClass = (value) => {
       </div>
 
       <p class="m-0 border-b border-hairline px-4 py-2 text-[0.72rem] text-mute">
-        方向鍵（↑↓←→）叫出這個面板；顯示每一天「是否有成功抓到每日行情快照」跟「是否有回測結果」。
+        依序按「上→下→左→右」叫出這個面板；顯示每一天「是否有成功抓到每日行情快照」跟「是否有回測結果」。
       </p>
 
       <div class="max-h-[60vh] overflow-y-auto">

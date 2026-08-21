@@ -29,6 +29,27 @@ const filteredShortWatchlist = computed(() =>
 );
 const filterActive = computed(() => isFilterActive(filters));
 
+// netReturnPercent 可能是 null（今天完全沒有成交時，不是「報酬率剛好是0」）。
+// null >= 0 在 JS 裡會被當成 0 >= 0 判斷成 true，如果直接拿這個條件式決定顏色，
+// 沒有交易的情況會被誤標成綠色（賺錢），這是會誤導使用者的顯示錯誤，
+// 所以要先明確排除 null／undefined 的情況，給一個中性色，不能讓它落入紅或綠。
+function netReturnColorClass(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'text-mute';
+  return value >= 0 ? 'text-surge' : 'text-ebb';
+}
+
+// executedCount 是 0 時，給使用者一個看得懂的原因摘要，而不是只留一句「沒有交易」讓人猜。
+// 如果 skipped 裡的原因全部一樣（最常見的情況：當天某個市場資料源整個失敗，見 backtest.mjs
+// 的 unavailableMarkets 說明），就直接把那句原因秀出來；原因不只一種時，退回顯示筆數，
+// 避免把好幾種不同原因硬擠成一句可能誤導的話。
+const backtestSkipSummary = computed(() => {
+  const skipped = result.value?.backtest?.skipped;
+  if (!skipped || skipped.length === 0) return '';
+  const reasons = new Set(skipped.map((s) => s.reason));
+  if (reasons.size === 1) return `原因：${[...reasons][0]}`;
+  return `共 ${skipped.length} 檔被跳過，原因不只一種，詳見 API 回應的 skipped 欄位。`;
+});
+
 async function loadData() {
   isLoading.value = true;
   loadError.value = null;
@@ -94,8 +115,12 @@ onMounted(loadData);
           <p class="mb-0 mt-2 font-mono text-[0.78rem] text-mute">
             訊號日 {{ result.backtest.signalDate }} · 執行日 {{ result.backtest.executionDate }} · 成交 {{ result.backtest.executedCount }}/{{ result.backtest.selectedCount }} 檔 ·
             毛報酬 {{ formatPercent(result.backtest.grossReturnPercent) }} · 淨報酬
-            <span :class="result.backtest.netReturnPercent >= 0 ? 'text-surge' : 'text-ebb'">{{ formatPercent(result.backtest.netReturnPercent) }}</span> ·
+            <span :class="netReturnColorClass(result.backtest.netReturnPercent)">{{ formatPercent(result.backtest.netReturnPercent) }}</span> ·
             勝率 {{ formatPercent(result.backtest.winRatePercent) }}
+          </p>
+          <p v-if="result.backtest.executedCount === 0" class="mb-0 mt-2 rounded-sm border border-gold/40 bg-gold/10 px-2 py-1.5 text-[0.75rem] text-gold">
+            今天沒有任何一檔成交，報酬率暫時無法計算（不是 0%，是完全沒有資料）。
+            {{ backtestSkipSummary }}
           </p>
         </section>
 

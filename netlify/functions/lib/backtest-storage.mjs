@@ -38,3 +38,28 @@ export async function saveBacktestResult(result, store = defaultStore()) {
 export async function getLatestBacktestResult(store = defaultStore()) {
   return (await store.get(LATEST_KEY, { type: 'json' })) ?? null;
 }
+
+/**
+ * 讀取已存的回測訊號日清單。給歷史資料列表用，見 history-index.mjs。
+ *
+ * 注意：回傳的順序是「寫入順序」（最後寫入的排最前面），不是保證的日期順序。
+ * 正常每日累積時兩者是一致的（永遠是今天寫入、比昨天新），但如果呼叫端混用過
+ * backfill-backtest（由近到遠依序寫入）跟 scan.mjs（每天寫入今天），順序可能
+ * 跟日期大小對不上。需要保證日期排序的呼叫端請自行再排序一次。
+ *
+ * @param {Object} [store] 可注入的假 store（測試用）
+ * @returns {Promise<string[]>}
+ */
+export async function getBacktestIndex(store = defaultStore()) {
+  return (await store.get(INDEX_KEY, { type: 'json' })) ?? [];
+}
+
+/**
+ * 讀取單一訊號日的回測結果。
+ * @param {string} signalDate 'YYYY-MM-DD'
+ * @param {Object} [store] 可注入的假 store（測試用）
+ * @returns {Promise<Object|null>}
+ */
+export async function getBacktestResultByDate(signalDate, store = defaultStore()) {
+  return (await store.get(`by-signal-date/${signalDate}`, { type: 'json' })) ?? null;
+}

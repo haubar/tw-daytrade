@@ -3,7 +3,11 @@
 // 共用的格式化函式。原本 formatPercent／formatPrice／formatDateTime
 // 在 WatchlistPanel.vue 跟 StatusBar.vue 裡各寫了一份，抽出來共用一份。
 
+// 有些數值天生就可能是 null（不是計算出來的「剛好是0」，而是「今天根本沒有可以計算的資料」，
+// 例如回測當天 executedCount 是 0 時，grossReturnPercent／netReturnPercent／winRatePercent
+// 都會是 null）。這種情況呼叫 .toFixed() 會直接拋出例外把整個畫面弄壞，所以要先擋掉。
 export function formatPercent(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
   const sign = value > 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 }

@@ -1,5 +1,5 @@
 import { evaluateOpenToCloseLong } from '../lib/backtest.mjs';
-import { getLatestBacktestResult, saveBacktestResult } from '../lib/backtest-storage.mjs';
+import { getLatestBacktestResult, saveBacktestResult, getBacktestIndex, getBacktestResultByDate } from '../lib/backtest-storage.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -92,6 +92,34 @@ assertEqual(
   (await getLatestBacktestResult(store3)).signalDate,
   '2026-08-19',
   '之後才寫入的歷史回填資料（更舊的訊號日）不應該覆蓋掉已經存在的、更新的 latest'
+);
+
+// ---- getBacktestIndex / getBacktestResultByDate：給歷史資料列表用（history-index.mjs）----
+const store4 = { setJSON: async (key, value) => data4.set(key, value), get: async (key) => data4.get(key) ?? null };
+const data4 = new Map();
+await saveBacktestResult({ signalDate: '2026-08-18', executedCount: 5 }, store4);
+await saveBacktestResult({ signalDate: '2026-08-17', executedCount: 3 }, store4);
+assertEqual(
+  await getBacktestIndex(store4),
+  ['2026-08-17', '2026-08-18'],
+  'getBacktestIndex：回傳的是「寫入順序」（最後寫入的排最前面），不是日期順序——' +
+    '正常每日累積時兩者一致（永遠是今天>昨天依序寫入），但呼叫端如果要保證日期排序，' +
+    '要自己再排一次，不能假設這個順序已經是新到舊'
+);
+assertEqual(
+  (await getBacktestResultByDate('2026-08-18', store4)).executedCount,
+  5,
+  'getBacktestResultByDate：應該能拿回指定日期的完整回測結果'
+);
+assertEqual(
+  await getBacktestResultByDate('2099-01-01', store4),
+  null,
+  'getBacktestResultByDate：查詢沒有資料的日期應該回傳 null，不拋出例外'
+);
+assertEqual(
+  await getBacktestIndex({ get: async () => null }),
+  [],
+  'getBacktestIndex：完全沒有資料時應該回傳空陣列'
 );
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);

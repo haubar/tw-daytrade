@@ -1,11 +1,14 @@
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import StatusBar from './components/StatusBar.vue';
 import WatchlistPanel from './components/WatchlistPanel.vue';
 import FilterPanel from './components/FilterPanel.vue';
+import HistoryPanel from './components/HistoryPanel.vue';
 import { sampleScanResult } from './sampleData.js';
 import { filterWatchlist, isFilterActive, DEFAULT_MIN_VOLUME_LOTS } from './utils/filterWatchlist.js';
 import { formatPercent } from './utils/format.js';
+
+const historyPanelRef = ref(null);
 
 const result = ref(null);
 const isSample = ref(false);
@@ -82,10 +85,21 @@ async function loadData() {
 }
 
 onMounted(loadData);
+
+// 按任一方向鍵叫出「歷史資料列表」面板（見 HistoryPanel.vue）。用全域監聽器而不是綁在
+// 某個特定元件上，是因為使用者不需要先點擊任何東西、隨時按方向鍵都應該有反應——
+// 這是刻意設計成不明顯的隱藏功能，不放進一般可見的 UI 按鈕。
+function handleGlobalKeydown(e) {
+  historyPanelRef.value?.handleKeydown(e);
+}
+onMounted(() => window.addEventListener('keydown', handleGlobalKeydown));
+onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
 </script>
 
 <template>
   <div class="flex min-h-screen justify-center px-4 pb-8 pt-6">
+    <HistoryPanel ref="historyPanelRef" />
+
     <main class="w-full max-w-[1080px]">
       <template v-if="isLoading">
         <p class="py-8 text-center font-mono text-mute">正在讀取今日觀察榜…</p>

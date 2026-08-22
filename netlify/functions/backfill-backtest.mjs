@@ -12,6 +12,7 @@ import { evaluateOpenToCloseLong } from './lib/backtest.mjs';
 import { saveBacktestResult } from './lib/backtest-storage.mjs';
 import { buildHistoricalBacktestWindows, parseBacktestDays, parseCursorDate, computeNextEndDate } from './lib/backtest-history.mjs';
 import { DEFAULT_HISTORY_WINDOW_DAYS } from './lib/volume-archive.mjs';
+import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
 
 // 改成依序（不並行）打 TWSE，避免觸發併發請求限制；代價是單次呼叫的總耗時變長，
 // 所以把單次最多回填的訊號日數從 3 調降到 1，讓每次呼叫需要循序抓取的候選天數
@@ -41,6 +42,20 @@ function buildVolumeHistory(historyDays) {
 export default async (req) => {
   const url = new URL(req.url);
 
+  // dynamicHolidays 是 sync-trading-calendar.mjs 自動同步下來的官方休市日（見
+  // trading-calendar-cache.mjs），補齊 P4「交易日曆自動化」原本記錄的已知限制——
+  // 這支 function 過去只看 trading-day.mjs 的靜態表。往回補歷史時可能跨年，
+  // 抓「今年」跟「去年」兩個年度。讀取失敗優雅退回空集合，靜態表依然有效。
+  // 這裡要先抓好才能往下算 cursorDate（signalDate 精準模式的兩段式反推也要用到），
+  // 所以放在最前面、用 await 等它做完。
+  let dynamicHolidays = new Set();
+  try {
+    const now = new Date();
+    dynamicHolidays = await getExchangeHolidaysForYears([now.getFullYear(), now.getFullYear() - 1]);
+  } catch {
+    // 讀取失敗就當作沒有自動同步的資料
+  }
+
   // signalDate 是給「回填控制頁」用的精準模式：使用者在畫面上看到某一天缺資料，
   // 按下按鈕只想補那一天，不想處理「往前批次補幾天」這種間接的 endDate/days 概念。
   // 提供 signalDate 時，直接反推「執行日」（訊號日之後的下一個交易日，見
@@ -61,8 +76,10 @@ export default async (req) => {
     // 要設在「執行日的下一個交易日」——所以要呼叫兩次 getNextTradingDay：
     // 第一次從訊號日找到執行日，第二次從執行日再往後找一天當 cursorDate。
     // （已經用實際日期手動推算過＋單元測試驗證這個兩段式算法是準的，不是憑感覺猜的。）
-    const executionDate = getNextTradingDay(dateFromIso(requestedSignalDate));
-    cursorDate = getNextTradingDay(executionDate);
+    // 兩次呼叫都帶入 dynamicHolidays，確保反推邏輯也採用最新的官方日曆，跟 candidates
+    // 的產生邏輯用同一份休市日資料，不會兩邊對不上。
+    const executionDate = getNextTradingDay(dateFromIso(requestedSignalDate), dynamicHolidays);
+    cursorDate = getNextTradingDay(executionDate, dynamicHolidays);
   } else {
     days = parseBacktestDays(url.searchParams.get('days'), MAX_SIGNAL_DAYS_PER_RUN, MAX_SIGNAL_DAYS_PER_RUN);
     cursorDate = parseCursorDate(url.searchParams.get('endDate'));
@@ -73,7 +90,7 @@ export default async (req) => {
 
   try {
     // 每個訊號日需要：1 個執行日 + 5 個歷史基準日；相鄰窗口共用資料，所以只多抓 days + 6 天。
-    const candidates = getPastTradingDayCandidates(cursorDate, days + DEFAULT_HISTORY_WINDOW_DAYS + 1);
+    const candidates = getPastTradingDayCandidates(cursorDate, days + DEFAULT_HISTORY_WINDOW_DAYS + 1, dynamicHolidays);
     const snapshots = [];
     const debugInfo = [];
     // 改成一次一個、依序打（不是同時發 BATCH_SIZE 個並行請求）。實測發現 TWSE 端點在多個

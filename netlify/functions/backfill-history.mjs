@@ -23,6 +23,7 @@ import { fetchOneDay } from './lib/history.mjs';
 import { getPastTradingDayCandidates, formatDateParam } from './lib/trading-day.mjs';
 import { appendDailySnapshot, getArchivedDates, DEFAULT_HISTORY_WINDOW_DAYS } from './lib/volume-archive.mjs';
 import { computeChangePercent, computeMarketChangeProxy } from './lib/factors.mjs';
+import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
 
 // 補資料的目標天數，跟 scan.mjs 實際使用的窗口天數保持一致（見 volume-archive.mjs 的
 // DEFAULT_HISTORY_WINDOW_DAYS 說明：原本 3 天拉長到 5 天，降低單一天異常量能的干擾）。
@@ -74,7 +75,22 @@ export function chunk(items, size) {
 export default async (req) => {
   try {
     const archivedDates = await getArchivedDates();
-    const candidates = getPastTradingDayCandidates(new Date(), MAX_CANDIDATE_ATTEMPTS);
+
+    // dynamicHolidays 是 sync-trading-calendar.mjs 自動同步下來的官方休市日（見
+    // trading-calendar-cache.mjs），補齊 P4「交易日曆自動化」原本記錄的已知限制——
+    // 這支 function 過去只看 trading-day.mjs 的靜態表。往回抓歷史日期時可能跨年，
+    // 所以抓「今年」跟「去年」兩個年度的資料（跟 scan.mjs 往前看時抓「今年」跟「明年」
+    // 是對稱的邏輯，這裡因為是往回補歷史，方向相反）。讀取失敗優雅退回空集合，
+    // 靜態表依然有效，不影響主流程。
+    let dynamicHolidays = new Set();
+    try {
+      const now = new Date();
+      dynamicHolidays = await getExchangeHolidaysForYears([now.getFullYear(), now.getFullYear() - 1]);
+    } catch {
+      // 讀取失敗就當作沒有自動同步的資料
+    }
+
+    const candidates = getPastTradingDayCandidates(new Date(), MAX_CANDIDATE_ATTEMPTS, dynamicHolidays);
     const batches = chunk(candidates, BATCH_SIZE);
 
     const debugInfo = [];

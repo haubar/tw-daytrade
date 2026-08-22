@@ -134,7 +134,7 @@ https://你的站台.netlify.app/.netlify/functions/sync-trading-calendar
 
 **判斷規則需要留意**：TWSE 這份公告清單裡，不是每一筆都是「休市日」——也包含像「農曆春節前最後交易日」「國曆新年開始交易日」這種提醒用的資訊性公告，那幾天實際上**有交易**。`lib/trading-calendar.mjs` 的 `isActualHoliday()` 用「說明文字包含『放假』或『補假』」「名稱包含『無交易』」判斷是不是真正的休市日，已經用實際 API 回傳的樣本資料驗證過解析結果（見 `_test-trading-calendar.mjs`）。
 
-**目前只串接到 `scan.mjs` 的歷史累積庫寫入防呆**（決定今天要不要寫入 Blobs）；`getPastTradingDayCandidates`（`backfill-history.mjs`、`backfill-backtest.mjs` 挑選候選交易日時使用）目前仍只參考靜態表，還沒接上自動同步的資料——這是已知的後續改善項目，不影響現有功能正確性（因為這兩支 function 最終都會用「回傳資料本身的日期」再次驗證，不完全依賴候選日期猜測）。
+串接範圍涵蓋 `scan.mjs` 的歷史累積庫寫入防呆，以及 `backfill-history.mjs`／`backfill-backtest.mjs` 挑選候選交易日時使用的 `getPastTradingDayCandidates`——都會優先參考自動同步的資料，讀取失敗時優雅退回只用靜態表。
 
 **如果 backfill-history 抓不到之前交易日的資料**：這支 function 的回應會附上 `debugInfo` 欄位，列出每個候選日期「送出去的參數」跟「實際拿回來的日期」，方便判斷問題出在哪：
 - 如果每筆 `actualDate` 都一樣 → 曾經實測發生過：原本用的 `www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?date=...` 端點不管 `date` 參數送哪一天，回傳的都是同一天資料，研判是 CDN 快取沒有把 `date` 算進快取鍵值。**已經改用 `MI_INDEX` 端點解決**（見下方說明），如果又遇到這個症狀，可能是 `MI_INDEX` 端點本身也開始出現同樣的問題，需要再進一步排查

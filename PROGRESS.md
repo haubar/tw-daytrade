@@ -1298,3 +1298,18 @@ README.md（已知限制、FinMind 診斷說明更新）
 
 **驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **304** 項案例全數通過（含新增的 3 個 computeNextEndDate 測試）；`npm run build` 成功。實際依序呼叫的效果因無法在開發環境連線真實 TWSE 驗證，需部署後由使用者實際觸發確認。
 
+---
+
+## 階段 40：清理技術債——`getPastTradingDayCandidates` 補接自動同步交易日曆
+
+**背景**：部署後在正式環境進行了一輪實際除錯（詳見對應的 git commit：修正 `backfill-backtest` 依序回補多個訊號日時 `nextEndDate` 卡死、回測結算跳過訊息區分市場層級與個股層級問題、回測報酬率為 `null` 時前端崩潰、新增歷史資料列表與方向鍵序列觸發、新增回填控制頁支援精準指定單日回填、觀察榜排版擠壓股票名稱），期間持續補測試、修正真實踩到的 bug。這些都已經記錄在各自的 commit message 裡，這裡不重複展開。
+
+這個階段收尾處理階段 38（交易日曆自動同步）當時記錄的已知限制：`getPastTradingDayCandidates`（`backfill-history.mjs`、`backfill-backtest.mjs` 用來挑選候選交易日）過去只看 `trading-day.mjs` 的靜態表，沒有接上 `sync-trading-calendar.mjs` 自動同步下來的官方日曆。
+
+**完成事項**：
+- `backfill-history.mjs`：呼叫 `getExchangeHolidaysForYears([今年, 去年])` 讀取自動同步的休市日，傳入 `getPastTradingDayCandidates`；讀取失敗優雅退回空集合，靜態表依然有效
+- `backfill-backtest.mjs`：同樣接上 `dynamicHolidays`，且 `signalDate` 精準模式的兩段式 `getNextTradingDay` 反推也一併帶入，確保「候選清單怎麼產生」跟「怎麼反推訊號日對應的執行日」用的是同一份休市日資料，不會兩邊對不上
+
+**驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **357** 項案例全數通過（無新增測試——這次是接上既有、已測試過的 `getExchangeHolidaysForYears`／`getPastTradingDayCandidates(dynamicHolidays)`／`getNextTradingDay(dynamicHolidays)`，這幾個函式本身的邏輯在階段 38／回填控制頁那次已經測過，這裡只是新增呼叫端，不是新邏輯）；`npm run build` 成功。
+
+

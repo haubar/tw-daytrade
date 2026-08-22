@@ -46,22 +46,26 @@ function profitReference(price) {
       >
         <span class="font-mono text-[0.85rem] text-mute">{{ String(index + 1).padStart(2, '0') }}</span>
 
-        <span class="flex min-w-0 items-baseline gap-2">
-          <span class="shrink-0 font-mono text-[0.85rem] text-mute">{{ item.code }}</span>
-          <span class="overflow-hidden text-ellipsis whitespace-nowrap font-medium">{{ item.name }}</span>
-          <Badge :label="item.market === 'TWSE' ? '上市' : '上櫃'" />
-          <Badge
-            v-if="item.institutionalDataMissing"
-            label="法人資料暫缺"
-            variant="notice"
-            title="這檔股票當日沒有三大法人買賣超資料，法人買賣超因子以中性值（0分）計入總分，總分僅反映其餘三個因子"
-          />
-          <Badge
-            v-if="item.dayTradeEligible === false"
-            label="不可當沖"
-            variant="notice"
-            title="這檔股票今天不在證交所公告的現股當沖標的清單裡（或臨時被暫停當沖資格），無法用現股當沖方式操作"
-          />
+        <span class="flex min-w-0 flex-col gap-1">
+          <span class="flex min-w-0 items-baseline gap-2">
+            <span class="shrink-0 font-mono text-[0.85rem] text-mute">{{ item.code }}</span>
+            <span class="overflow-hidden text-ellipsis whitespace-nowrap font-medium">{{ item.name }}</span>
+          </span>
+          <span class="flex flex-wrap items-center gap-1">
+            <Badge :label="item.market === 'TWSE' ? '上市' : '上櫃'" />
+            <Badge
+              v-if="item.institutionalDataMissing"
+              label="法人資料暫缺"
+              variant="notice"
+              title="這檔股票當日沒有三大法人買賣超資料，法人買賣超因子以中性值（0分）計入總分，總分僅反映其餘三個因子"
+            />
+            <Badge
+              v-if="item.dayTradeEligible === false"
+              label="不可當沖"
+              variant="notice"
+              title="這檔股票今天不在證交所公告的現股當沖標的清單裡（或臨時被暫停當沖資格），無法用現股當沖方式操作"
+            />
+          </span>
         </span>
 
         <span class="flex flex-col items-end font-mono leading-tight">

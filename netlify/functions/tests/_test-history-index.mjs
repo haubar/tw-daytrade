@@ -1,7 +1,7 @@
 // netlify/functions/tests/_test-history-index.mjs
 // 執行方式：node netlify/functions/tests/_test-history-index.mjs
 
-import { mergeDateLists, summarizeBacktest, buildHistoryItems } from '../lib/history-index.mjs';
+import { mergeDateLists, summarizeBacktest, buildHistoryItems, buildBackfillStatusItems } from '../lib/history-index.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -72,6 +72,28 @@ assertEqual(items.length, 3, '應該產生跟輸入日期數量一致的項目')
 assertEqual(items[0], { date: '2026-08-19', hasDailySnapshot: true, backtest: { executedCount: 5, netReturnPercent: 1.1 } }, '有每日快照又有回測結果的日期，兩個欄位都應該正確帶出');
 assertEqual(items[1], { date: '2026-08-18', hasDailySnapshot: true, backtest: null }, '有每日快照但沒有回測結果的日期，backtest 應該是 null');
 assertEqual(items[2], { date: '2026-08-10', hasDailySnapshot: false, backtest: { executedCount: 0, netReturnPercent: null } }, '沒有每日快照（可能已經被15天上限淘汰）但仍有回測結果的日期，應該正確標示 hasDailySnapshot=false');
+
+// ---- buildBackfillStatusItems：給回填控制頁用 ----
+const statusItems = buildBackfillStatusItems(
+  ['2026-08-19', '2026-08-18', '2026-08-17'],
+  ['2026-08-19', '2026-08-17'] // 08-18 缺回測資料
+);
+assertEqual(
+  statusItems,
+  [
+    { date: '2026-08-19', hasBacktest: true },
+    { date: '2026-08-18', hasBacktest: false },
+    { date: '2026-08-17', hasBacktest: true },
+  ],
+  '應該正確標示每一天有沒有回測資料，順序跟著 tradingDayDates 走（不重新排序）'
+);
+assertEqual(buildBackfillStatusItems([], ['2026-08-19']), [], 'tradingDayDates 是空陣列時應該回傳空陣列');
+assertEqual(
+  buildBackfillStatusItems(['2026-08-19'], []),
+  [{ date: '2026-08-19', hasBacktest: false }],
+  'backtestDates 是空陣列時，全部應該標示為沒有回測資料'
+);
+assertEqual(buildBackfillStatusItems(null, null), [], '傳入 null 應該安全回傳空陣列，不拋出例外');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

@@ -1,7 +1,7 @@
 // netlify/functions/_test-trading-day.mjs
 // 執行方式：npm run test:trading-day
 
-import { isWeekend, formatDateParam, getPastTradingDayCandidates, isMarketDataReady, isExchangeHoliday, isNonTradingDay } from '../lib/trading-day.mjs';
+import { isWeekend, formatDateParam, getPastTradingDayCandidates, isMarketDataReady, isExchangeHoliday, isNonTradingDay, getNextTradingDay, formatIsoDate } from '../lib/trading-day.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -97,6 +97,40 @@ assertEqual(
   isNonTradingDay(new Date(2026, 6, 4), new Set(['2026-07-05'])),
   true,
   'dynamicHolidays 跟週末判斷應該是「或」的關係：週末本身就該排除，不會因為 dynamicHolidays 裡沒有這天就被誤判成交易日'
+);
+
+// ---- getPastTradingDayCandidates 的 dynamicHolidays 參數（對應 P4 已知限制的補完）----
+assertEqual(
+  getPastTradingDayCandidates(new Date(2026, 0, 6), 3).map(formatIsoDate),
+  ['2026-01-05', '2026-01-02', '2025-12-31'],
+  '沒有提供 dynamicHolidays 時（向後相容），行為應該跟原本一樣，只用靜態表判斷'
+);
+assertEqual(
+  getPastTradingDayCandidates(new Date(2026, 0, 6), 3, new Set(['2026-01-05'])).map(formatIsoDate),
+  ['2026-01-02', '2025-12-31', '2025-12-30'],
+  '提供 dynamicHolidays 時，應該跟靜態表取聯集，把動態同步的休市日也排除掉'
+);
+
+// ---- getNextTradingDay：給回填控制頁反推「執行日」用 ----
+assertEqual(
+  formatIsoDate(getNextTradingDay(new Date(2026, 6, 6))), // 週一
+  '2026-07-07',
+  '平日的下一個交易日應該是隔天（週二）'
+);
+assertEqual(
+  formatIsoDate(getNextTradingDay(new Date(2026, 6, 3))), // 週五
+  '2026-07-06',
+  '週五的下一個交易日應該跳過週末，直接到下週一'
+);
+assertEqual(
+  formatIsoDate(getNextTradingDay(new Date(2025, 11, 31))), // 2025-12-31（週三），隔天是元旦
+  '2026-01-02',
+  '下一個交易日剛好是國定假日（元旦）時，應該再往後跳到真正的交易日'
+);
+assertEqual(
+  formatIsoDate(getNextTradingDay(new Date(2026, 6, 6), new Set(['2026-07-07']))),
+  '2026-07-08',
+  '提供 dynamicHolidays 時，應該也一併排除動態同步的休市日'
 );
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);

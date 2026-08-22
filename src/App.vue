@@ -4,11 +4,15 @@ import StatusBar from './components/StatusBar.vue';
 import WatchlistPanel from './components/WatchlistPanel.vue';
 import FilterPanel from './components/FilterPanel.vue';
 import HistoryPanel from './components/HistoryPanel.vue';
+import BackfillControlPage from './components/BackfillControlPage.vue';
 import { sampleScanResult } from './sampleData.js';
 import { filterWatchlist, isFilterActive, DEFAULT_MIN_VOLUME_LOTS } from './utils/filterWatchlist.js';
 import { formatPercent } from './utils/format.js';
 
 const historyPanelRef = ref(null);
+// 目前沒有引入 vue-router（整個專案刻意保持輕量，只有兩個畫面切換，不值得為此加一個路由套件），
+// 用最單純的狀態切換即可：'dashboard' 是平常的觀察榜畫面，'backfill-control' 是回填控制頁。
+const currentView = ref('dashboard');
 
 const result = ref(null);
 const isSample = ref(false);
@@ -100,7 +104,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
   <div class="flex min-h-screen justify-center px-4 pb-8 pt-6">
     <HistoryPanel ref="historyPanelRef" />
 
-    <main class="w-full max-w-[1080px]">
+    <BackfillControlPage v-if="currentView === 'backfill-control'" @close="currentView = 'dashboard'" />
+
+    <main v-else class="w-full max-w-[1080px]">
       <template v-if="isLoading">
         <p class="py-8 text-center font-mono text-mute">正在讀取今日觀察榜…</p>
       </template>
@@ -160,6 +166,11 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
           </p>
           <p class="m-0 font-mono">
             上櫃法人(FinMind) {{ result.dataSourceStatus.finmindTpexInstitutional ?? '（本次結果尚無此資料，可能是舊版快取）' }}
+          </p>
+          <p class="m-0 mt-2">
+            <button type="button" class="text-mute underline hover:text-paper" @click="currentView = 'backfill-control'">
+              回填控制頁
+            </button>
           </p>
         </footer>
       </template>

@@ -1,4 +1,5 @@
 import { buildHistoricalBacktestWindows, parseBacktestDays, parseCursorDate, computeNextEndDate } from '../lib/backtest-history.mjs';
+import { getPastTradingDayCandidates, getNextTradingDay, formatIsoDate } from '../lib/trading-day.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -36,6 +37,25 @@ assertEqual(
   null,
   'candidates 也是空的時候（理論上不該發生，防呆處理），應該回傳 null 而不是拋出例外'
 );
+
+// ---- 回填控制頁的「精準指定訊號日」targeting 邏輯：getNextTradingDay 呼叫兩次算出 cursorDate，
+// 搭配 getPastTradingDayCandidates + buildHistoricalBacktestWindows，驗證最終窗口的訊號日
+// 真的等於使用者指定的那一天，不是猜的、是端到端驗證過的（見 backfill-backtest.mjs 的說明）----
+function assertSignalDateTargeting(signalDateStr, expectedExecutionDateStr, label) {
+  const [y, m, d] = signalDateStr.split('-').map(Number);
+  const signalDate = new Date(y, m - 1, d);
+  const executionDate = getNextTradingDay(signalDate);
+  const cursorDate = getNextTradingDay(executionDate);
+  const candidates = getPastTradingDayCandidates(cursorDate, 7);
+  const snapshots = candidates.map((c) => ({ date: formatIsoDate(c), quotes: [] }));
+  const windows = buildHistoricalBacktestWindows(snapshots);
+  assertEqual(windows[0]?.signal?.date, signalDateStr, `${label}：窗口的訊號日應該精準等於指定的日期`);
+  assertEqual(windows[0]?.execution?.date, expectedExecutionDateStr, `${label}：窗口的執行日應該是訊號日的下一個交易日`);
+}
+
+assertSignalDateTargeting('2026-08-14', '2026-08-17', '一般平日（週五訊號，隔週一執行）');
+assertSignalDateTargeting('2026-08-17', '2026-08-18', '一般平日（週一訊號，週二執行）');
+assertSignalDateTargeting('2025-12-31', '2026-01-02', '跨年邊界，隔天是元旦國定假日，執行日應該再往後跳到真正的交易日');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

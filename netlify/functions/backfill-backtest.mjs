@@ -6,7 +6,7 @@
 
 import { fetchOneDay } from './lib/history.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
-import { getPastTradingDayCandidates } from './lib/trading-day.mjs';
+import { getPastTradingDayCandidates, getNextTradingDay } from './lib/trading-day.mjs';
 import { screenWatchlists } from './lib/screen.mjs';
 import { evaluateOpenToCloseLong } from './lib/backtest.mjs';
 import { saveBacktestResult } from './lib/backtest-storage.mjs';
@@ -40,10 +40,35 @@ function buildVolumeHistory(historyDays) {
 
 export default async (req) => {
   const url = new URL(req.url);
-  const days = parseBacktestDays(url.searchParams.get('days'), MAX_SIGNAL_DAYS_PER_RUN, MAX_SIGNAL_DAYS_PER_RUN);
-  const cursorDate = parseCursorDate(url.searchParams.get('endDate'));
-  if (!cursorDate) {
-    return new Response(JSON.stringify({ error: 'endDate 必須是 YYYY-MM-DD 格式' }), { status: 400 });
+
+  // signalDate 是給「回填控制頁」用的精準模式：使用者在畫面上看到某一天缺資料，
+  // 按下按鈕只想補那一天，不想處理「往前批次補幾天」這種間接的 endDate/days 概念。
+  // 提供 signalDate 時，直接反推「執行日」（訊號日之後的下一個交易日，見
+  // trading-day.mjs 的 getNextTradingDay）當作候選清單的游標，並強制 days=1，
+  // 忽略呼叫端另外傳的 endDate/days（如果有的話，signalDate 優先）。
+  const requestedSignalDate = url.searchParams.get('signalDate');
+  let days;
+  let cursorDate;
+
+  if (requestedSignalDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedSignalDate)) {
+      return new Response(JSON.stringify({ error: 'signalDate 必須是 YYYY-MM-DD 格式' }), { status: 400 });
+    }
+    days = 1;
+    // 候選清單是「從 cursorDate 往回推」找交易日，candidates[0] 是候選清單裡第一個
+    // （也是最新的）有效交易日，會被當成執行日；candidates[1] 才是訊號日。
+    // 要讓 candidates[0] 精準落在「訊號日的下一個交易日（執行日）」上，cursorDate 本身
+    // 要設在「執行日的下一個交易日」——所以要呼叫兩次 getNextTradingDay：
+    // 第一次從訊號日找到執行日，第二次從執行日再往後找一天當 cursorDate。
+    // （已經用實際日期手動推算過＋單元測試驗證這個兩段式算法是準的，不是憑感覺猜的。）
+    const executionDate = getNextTradingDay(dateFromIso(requestedSignalDate));
+    cursorDate = getNextTradingDay(executionDate);
+  } else {
+    days = parseBacktestDays(url.searchParams.get('days'), MAX_SIGNAL_DAYS_PER_RUN, MAX_SIGNAL_DAYS_PER_RUN);
+    cursorDate = parseCursorDate(url.searchParams.get('endDate'));
+    if (!cursorDate) {
+      return new Response(JSON.stringify({ error: 'endDate 必須是 YYYY-MM-DD 格式' }), { status: 400 });
+    }
   }
 
   try {
@@ -101,9 +126,18 @@ export default async (req) => {
     // 發生過的 bug）。
     const nextEndDate = computeNextEndDate(windows, candidates);
 
+    // 精準模式（帶了 signalDate）時，前端只關心「這一天到底有沒有補成功」，不需要自己去
+    // completed 陣列裡找。明確標示出來，回填控制頁的按鈕狀態才能單純用這個欄位判斷，
+    // 不用重新實作一次「這筆結果是不是我要的那天」的比對邏輯。
+    const targetResult = requestedSignalDate
+      ? results.find((r) => r.signalDate === requestedSignalDate) ?? null
+      : null;
+
     return new Response(JSON.stringify({
       message: `歷史回測回填完成：成功結算 ${results.filter((result) => !result.skipped).length}/${windows.length} 個訊號日（上市市場）`,
       requestedSignalDays: days,
+      requestedSignalDate: requestedSignalDate || null,
+      targetSignalDateSucceeded: requestedSignalDate ? Boolean(targetResult && !targetResult.skipped) : null,
       completed: results,
       debugInfo,
       nextEndDate,

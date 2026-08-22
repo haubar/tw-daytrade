@@ -115,25 +115,46 @@ export function formatDateParam(date) {
 }
 
 /**
- * 產生「候選交易日」清單：從 referenceDate 往回推，跳過週六日。
- * 這只是粗略近似（沒有處理國定假日），實際交易日數量可能比 count 少，
- * 所以呼叫端要自己多要幾個候選日期，並依「實際回傳的日期」來判斷是否蒐集足夠。
+ * 產生「候選交易日」清單：從 referenceDate 往回推，跳過週六日跟已知休市日。
+ * 這只是粗略近似，實際交易日數量可能比 count 少，所以呼叫端要自己多要幾個候選日期，
+ * 並依「實際回傳的日期」來判斷是否蒐集足夠。
  *
  * @param {Date} referenceDate
  * @param {number} count 要產生幾個候選日期
+ * @param {Set<string>} [dynamicHolidays] 見 isNonTradingDay 的說明：自動同步的休市日集合，
+ *   跟靜態表取聯集。預設空集合，維持向後相容——這是目前唯一還沒接上自動同步日曆的地方
+ *   （見 README「交易日曆自動同步」章節的已知限制，這次補上）。
  * @returns {Date[]}
  */
-export function getPastTradingDayCandidates(referenceDate, count) {
+export function getPastTradingDayCandidates(referenceDate, count, dynamicHolidays = new Set()) {
   const candidates = [];
   const cursor = new Date(referenceDate);
   cursor.setDate(cursor.getDate() - 1); // 從「前一天」開始往回推
 
   while (candidates.length < count) {
-    if (!isWeekend(cursor) && !isExchangeHoliday(cursor)) {
+    if (!isWeekend(cursor) && !isExchangeHoliday(cursor) && !dynamicHolidays.has(formatIsoDate(cursor))) {
       candidates.push(new Date(cursor));
     }
     cursor.setDate(cursor.getDate() - 1);
   }
 
   return candidates;
+}
+
+/**
+ * 找出某個日期之後的下一個交易日（不含當天本身）。給「回填控制頁」精準指定單一
+ * 訊號日回填時用：知道訊號日是哪一天，需要反推「執行日」（訊號日之後的下一個交易日）
+ * 當作 backfill-backtest 的 endDate 游標，才能讓候選清單剛好把訊號日包進去。
+ *
+ * @param {Date} afterDate
+ * @param {Set<string>} [dynamicHolidays]
+ * @returns {Date}
+ */
+export function getNextTradingDay(afterDate, dynamicHolidays = new Set()) {
+  const cursor = new Date(afterDate);
+  cursor.setDate(cursor.getDate() + 1);
+  while (isWeekend(cursor) || isExchangeHoliday(cursor) || dynamicHolidays.has(formatIsoDate(cursor))) {
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return cursor;
 }

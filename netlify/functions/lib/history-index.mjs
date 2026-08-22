@@ -31,6 +31,20 @@ export function summarizeBacktest(result) {
 }
 
 /**
+ * 組出給「回填控制頁」用的過去 N 個交易日狀態清單：每一天標示有沒有回測結果。
+ * @param {string[]} tradingDayDates 過去 N 個交易日（新到舊排序，'YYYY-MM-DD'）
+ * @param {string[]} backtestDates 已經有回測結果的訊號日清單（不需要排序，只用來判斷有無）
+ * @returns {Array<{date: string, hasBacktest: boolean}>}
+ */
+export function buildBackfillStatusItems(tradingDayDates, backtestDates) {
+  const backtestSet = new Set(backtestDates ?? []);
+  return (tradingDayDates ?? []).map((date) => ({
+    date,
+    hasBacktest: backtestSet.has(date),
+  }));
+}
+
+/**
  * 組出最終要回傳給前端的歷史資料列表項目。
  * @param {string[]} allDates mergeDateLists() 的結果
  * @param {string[]} archivedDates

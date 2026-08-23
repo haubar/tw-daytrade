@@ -175,6 +175,20 @@ T86 日報只涵蓋上市（TWSE）股票，上櫃（TPEx）沒有官方對應�
 
 **修正**：`normalize.mjs` 新增 `isWarrant`，依代碼位數（6 位數字）跟名稱特徵（含「購」／「售」加編號，例如「鈊象永豐63購01」）雙重判斷。`scan.mjs` 抓取 TWSE／TPEx 今日行情時都套用這個過濾（上市權證理論上也可能混在裡面，一併處理，不要只挑出問題的那一邊修），`fetch-daily-quotes.mjs` 這支除錯端點也同步加上 `warrantCount` 欄位方便確認過濾掉了幾檔。`screen.mjs` 額外新增 `twseCandidatesWithHistory`／`tpexCandidatesWithHistory` 診斷欄位，方便之後如果再遇到「上櫃候選是 0」，能立刻分辨是「上櫃股票根本沒進候選池」還是「排名不夠高」。
 
+## 資料源穩定度統計工具
+
+實際部署觀察一陣子後發現：`institutionalDataMissing` 這個標示做出來才意識到，法人買賣超（T86）資料**幾乎每天都抓失敗**，不是只有「上櫃股票沒有法人資料」這個原本知道的限制而已——這比預期的更嚴重，值得用真實數字確認，而不是憑印象判斷。
+
+```text
+https://你的站台.netlify.app/.netlify/functions/data-source-stats?days=20
+```
+
+回傳過去 N 個交易日（預設20天，上限60天），每一個資料源（`twse`／`tpex`／`institutional`／`taiex`／`finmindTpexInstitutional`／`dayTradeEligibility`／`historyArchive`／`relativeStrengthWindow`）實際的成功／失敗次數與失敗率，以及逐日明細（含原始錯誤訊息）。
+
+判斷規則：`dataSourceStatus` 裡的訊息字串開頭是 `ok` 算成功、開頭是 `失敗` 算失敗，其他中性說明文字（例如「這輪沒有上櫃候選，不需要查詢」）算 `unknown`，不計入失敗率的分母——避免把「沒有必要做」誤判成「做了但失敗了」。
+
+**注意**：`scan.mjs` 沒有維護「哪些日期有存過完整快照」的索引，這支工具用「過去 N 個交易日逐一嘗試讀取」的方式繞過（跟回填控制頁 `backfill-status.mjs` 同樣的做法），讀不到的日期會直接跳過，回應裡的 `daysWithSnapshot` 會告訴你實際找到幾天的資料可用。
+
 ## 前端 Dashboard
 
 深色看盤終端機風格，貼近台灣交易者熟悉的看盤軟體語彙：密集資訊、等寬數字對齊、**紅漲綠跌**（符合台股慣例，跟美股相反，務必留意）。

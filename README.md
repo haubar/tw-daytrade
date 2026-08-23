@@ -272,7 +272,12 @@ npm run test:visual:ui
 
 **已知限制**：這份程式碼是在一個網路白名單受限的容器環境裡寫的，沒辦法下載 Playwright 的瀏覽器執行檔（`cdn.playwright.dev` 不在允許清單），所以設定檔跟測試案例本身雖然已經寫好、邏輯確認沒問題，但**基準截圖還沒有真的產生過**，需要你在本機或 CI（例如 GitHub Actions，那邊網路沒有限制）執行一次 `npm run test:visual:update` 才會有基準圖可以比對。**第一次產生基準圖之後，務必人工打開 `tests/visual/**/*-snapshots/` 裡的圖檔看過一次**，確認畫面真的長得對，而不是無條件相信它——截圖比對只能抓「跟基準圖不一樣」，沒辦法幫你判斷「基準圖本身有沒有問題」。
 
-## 如何部署到 Netlify
+## 跟 stock_view 的整合
+
+觀察榜裡每一檔股票的代碼／名稱現在是連到 [stock_view](https://github.com/haubar/stock_view)（另一個股市觀測站，看歷史K線、均線用）的外部連結，新分頁開啟，帶上 `?code=股票代碼` 參數，stock_view 那邊會自動帶入搜尋框並觸發查詢，不用使用者自己再手動輸入一次。
+
+- 連結網址由 `src/config.js` 的 `STOCK_VIEW_BASE_URL` 集中設定，**目前是占位名稱** `https://stock-view.netlify.app`，等 stock_view 實際部署網址確定後，只需要改這一個地方
+- stock_view 那邊對應的改動：`src/App.vue` 新增 `applyQueryParamStock()`，在頁面載入時讀取網址的 `code`（或 `stock`，保留給之後可能的相容性）參數，自動查詢
 
 1. 把整個資料夾 push 到你的 GitHub repo
 2. Netlify 新建站台，連接該 repo，Build command / Publish directory 會自動讀 `netlify.toml`

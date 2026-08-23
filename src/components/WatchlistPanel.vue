@@ -6,10 +6,13 @@
 // - 市場標籤（上市/上櫃）抽成 Badge.vue 複用元件
 // - 版面／間距／色彩改用 Tailwind 工具類別，原本一大塊 scoped <style> 只留下真的必要的部分
 //   （grid-template-columns 的精確欄寬設定，Tailwind 沒有內建剛好符合的預設值，用 arbitrary value 表達）
+// - 股票代碼／名稱現在是連到 stock_view（另一個股市觀測站）的外部連結，見 config.js 的
+//   buildStockViewUrl()；新分頁開啟，不會打斷使用者在這頁的操作
 import ScoreBar from './ScoreBar.vue';
 import Badge from './base/Badge.vue';
 import { formatPercent, formatPrice, formatVolume } from '../utils/format.js';
 import { getPriceBand, getPriceMoveForTicks } from '../utils/filterWatchlist.js';
+import { buildStockViewUrl } from '../config.js';
 
 defineProps({
   title: { type: String, required: true },
@@ -47,10 +50,16 @@ function profitReference(price) {
         <span class="font-mono text-[0.85rem] text-mute">{{ String(index + 1).padStart(2, '0') }}</span>
 
         <span class="flex min-w-0 flex-col gap-1">
-          <span class="flex min-w-0 items-baseline gap-2">
+          <a
+            :href="buildStockViewUrl(item.code)"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex min-w-0 items-baseline gap-2 hover:underline"
+            :title="`在 stock_view 查看 ${item.name}（${item.code}）的歷史走勢`"
+          >
             <span class="shrink-0 font-mono text-[0.85rem] text-mute">{{ item.code }}</span>
             <span class="overflow-hidden text-ellipsis whitespace-nowrap font-medium">{{ item.name }}</span>
-          </span>
+          </a>
           <span class="flex flex-wrap items-center gap-1">
             <Badge :label="item.market === 'TWSE' ? '上市' : '上櫃'" />
             <Badge

@@ -276,7 +276,7 @@ npm run test:visual:ui
 
 觀察榜裡每一檔股票的代碼／名稱現在是連到 [stock_view](https://github.com/haubar/stock_view)（另一個股市觀測站，看歷史K線、均線用）的外部連結，新分頁開啟，帶上 `?code=股票代碼` 參數，stock_view 那邊會自動帶入搜尋框並觸發查詢，不用使用者自己再手動輸入一次。
 
-- 連結網址由 `src/config.js` 的 `STOCK_VIEW_BASE_URL` 集中設定，**目前是占位名稱** `https://stock-view.netlify.app`，等 stock_view 實際部署網址確定後，只需要改這一個地方
+- 連結網址由 `src/config.js` 的 `STOCK_VIEW_BASE_URL` 集中設定，目前指向 `https://stock-vvv.netlify.app`
 - stock_view 那邊對應的改動：`src/App.vue` 新增 `applyQueryParamStock()`，在頁面載入時讀取網址的 `code`（或 `stock`，保留給之後可能的相容性）參數，自動查詢
 
 1. 把整個資料夾 push 到你的 GitHub repo

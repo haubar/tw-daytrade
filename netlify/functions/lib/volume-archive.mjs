@@ -22,7 +22,7 @@ const MAX_ARCHIVED_DAYS = 15; // 保留最近 15 個交易日，避免 Blobs 裡
 // 均量基準，量能異常因子因此失真）。拉長到 5 天可以稀釋單一天雜訊的影響，同時不用等
 // 太久才能暖機完成（MAX_ARCHIVED_DAYS=15 天保留空間還有餘裕，之後想再拉到 10 天也不用
 // 改這裡以外的地方）。scan.mjs、backfill-history.mjs 都從這裡引用，只有一個地方需要改。
-export const DEFAULT_HISTORY_WINDOW_DAYS = 5;
+export const DEFAULT_HISTORY_WINDOW_DAYS = 10;
 
 function defaultStore() {
   return getStore(STORE_NAME);

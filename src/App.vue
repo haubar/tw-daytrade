@@ -131,15 +131,35 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
         </p>
 
         <section v-if="result.backtest" class="mb-4 rounded-md border border-hairline bg-panel p-4">
-          <h2 class="m-0 text-sm font-bold text-paper">基準回測｜前一日多方 Top {{ result.backtest.configuredTopN }}，隔日開盤買・收盤賣</h2>
-          <p class="mb-0 mt-2 font-mono text-[0.78rem] text-mute">
-            訊號日 {{ result.backtest.signalDate }} · 執行日 {{ result.backtest.executionDate }} · 成交 {{ result.backtest.executedCount }}/{{ result.backtest.selectedCount }} 檔 ·
-            毛報酬 {{ formatPercent(result.backtest.grossReturnPercent) }} · 淨報酬
-            <span :class="netReturnColorClass(result.backtest.netReturnPercent)">{{ formatPercent(result.backtest.netReturnPercent) }}</span> ·
-            勝率 {{ formatPercent(result.backtest.winRatePercent) }}
+          <h2 class="m-0 mb-3 text-sm font-bold text-paper">隔日當沖回測比對 (Top {{ result.backtest.configuredTopN }} 多方觀察股)</h2>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <!-- 基準策略 -->
+            <div class="rounded border border-hairline/40 bg-black/10 p-3">
+              <h3 class="m-0 text-[0.72rem] font-bold text-mute uppercase tracking-wider">基準策略 (開盤進、收盤出)</h3>
+              <p class="mb-0 mt-2 font-mono text-[0.78rem] text-mute leading-relaxed">
+                成交: {{ result.backtest.executedCount }}/{{ result.backtest.selectedCount }} 檔<br>
+                毛報酬: {{ formatPercent(result.backtest.grossReturnPercent) }}<br>
+                淨報酬: <span :class="netReturnColorClass(result.backtest.netReturnPercent)">{{ formatPercent(result.backtest.netReturnPercent) }}</span><br>
+                勝率: <span class="text-paper">{{ formatPercent(result.backtest.winRatePercent) }}</span>
+              </p>
+            </div>
+            <!-- 高級策略 -->
+            <div class="rounded border border-surge/30 bg-surge/5 p-3">
+              <h3 class="m-0 text-[0.72rem] font-bold text-surge uppercase tracking-wider">★ 高級當沖策略 (15m突破買、動態止損/止盈)</h3>
+              <p class="mb-0 mt-2 font-mono text-[0.78rem] text-mute leading-relaxed" v-if="result.backtest.adv">
+                成交: {{ result.backtest.adv.executedCount }}/{{ result.backtest.adv.selectedCount }} 檔 (未觸發: {{ result.backtest.adv.skippedCount }} 檔)<br>
+                毛報酬: {{ formatPercent(result.backtest.adv.grossReturnPercent) }}<br>
+                淨報酬: <span :class="netReturnColorClass(result.backtest.adv.netReturnPercent)">{{ formatPercent(result.backtest.adv.netReturnPercent) }}</span><br>
+                勝率: <span class="text-surge font-bold">{{ formatPercent(result.backtest.adv.winRatePercent) }}</span>
+              </p>
+              <p class="mb-0 mt-2 text-[0.75rem] text-mute" v-else>尚無高級策略回測資料</p>
+            </div>
+          </div>
+          <p class="mb-0 mt-3 font-mono text-[0.72rem] text-mute">
+            訊號日 {{ result.backtest.signalDate }} · 執行日 {{ result.backtest.executionDate }}
           </p>
           <p v-if="result.backtest.executedCount === 0" class="mb-0 mt-2 rounded-sm border border-gold/40 bg-gold/10 px-2 py-1.5 text-[0.75rem] text-gold">
-            今天沒有任何一檔成交，報酬率暫時無法計算（不是 0%，是完全沒有資料）。
+            今天基準策略沒有任何一檔成交，報酬率暫時無法計算。
             {{ backtestSkipSummary }}
           </p>
         </section>

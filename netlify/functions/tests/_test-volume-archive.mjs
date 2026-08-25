@@ -93,25 +93,20 @@ const emptyArchivedDates = await getArchivedDates(emptyStore);
 assertEqual(emptyArchivedDates, [], 'getArchivedDates：完全沒有資料時應回傳空陣列');
 
 // ---- 測試 8：DEFAULT_HISTORY_WINDOW_DAYS 常數與 getRecentVolumeHistory 搭配使用 ----
-// 對應《後續修改清單》P1「量能異常因子的計算窗口太短」：原本 3 天拉長到 5 天，
+// 對應《後續修改清單》P1「量能異常因子的計算窗口太短」：原本 3 天拉長到 5 天，後續我們進一步拉長到 10 天，
 // 降低單一天異常量能對均量基準的干擾。這裡驗證常數值本身，以及 scan.mjs 實際會用到的
-// 天數搭配 getRecentVolumeHistory 時，確實能抓到超過 3 天的歷史資料（不是還停留在舊行為）。
-assertEqual(DEFAULT_HISTORY_WINDOW_DAYS, 5, 'DEFAULT_HISTORY_WINDOW_DAYS 應為 5（原本 3 天，拉長以降低單日雜訊干擾）');
+// 天數搭配 getRecentVolumeHistory 時，確實能抓到對應天數的歷史資料。
+assertEqual(DEFAULT_HISTORY_WINDOW_DAYS, 10, 'DEFAULT_HISTORY_WINDOW_DAYS 應為 10（擴大以降低單日雜訊干擾）');
 
 const store8 = createFakeStore();
-for (const [date, volume] of [
-  ['2026-07-01', 1000],
-  ['2026-07-02', 1100],
-  ['2026-07-03', 1200],
-  ['2026-07-04', 1300],
-  ['2026-07-05', 1400],
-  ['2026-07-06', 1500], // 第 6 天，超出窗口範圍，不應被讀到
-]) {
+for (let i = 1; i <= 11; i++) {
+  const date = `2026-07-${String(i).padStart(2, '0')}`;
+  const volume = 1000 + i * 100;
   await appendDailySnapshot(date, [{ code: '1101', volume }], store8);
 }
 const result8 = await getRecentVolumeHistory(DEFAULT_HISTORY_WINDOW_DAYS, null, store8);
-assertEqual(result8.datesUsed.length, 5, '窗口設為 DEFAULT_HISTORY_WINDOW_DAYS 時，應讀到 5 天資料（不再是舊的 3 天）');
-assertEqual(result8.volumeHistory.get('1101').length, 5, '單一股票的歷史成交量陣列長度應為 5');
+assertEqual(result8.datesUsed.length, 10, '窗口設為 DEFAULT_HISTORY_WINDOW_DAYS 時，應讀到 10 天資料');
+assertEqual(result8.volumeHistory.get('1101').length, 10, '單一股票的歷史成交量陣列長度應為 10');
 
 // ---- 測試 9：多日相對強弱功能——changePercent 與 marketChangePercent 的存取 ----
 // 對應《後續修改清單》P1「相對強弱因子只用單日資料」

@@ -48,7 +48,7 @@ function assertSignalDateTargeting(signalDateStr, expectedExecutionDateStr, labe
   const cursorDate = getNextTradingDay(executionDate);
   const candidates = getPastTradingDayCandidates(cursorDate, 7);
   const snapshots = candidates.map((c) => ({ date: formatIsoDate(c), quotes: [] }));
-  const windows = buildHistoricalBacktestWindows(snapshots);
+  const windows = buildHistoricalBacktestWindows(snapshots, 5);
   assertEqual(windows[0]?.signal?.date, signalDateStr, `${label}：窗口的訊號日應該精準等於指定的日期`);
   assertEqual(windows[0]?.execution?.date, expectedExecutionDateStr, `${label}：窗口的執行日應該是訊號日的下一個交易日`);
 }

@@ -108,27 +108,29 @@ const netReturnColorClass = (value) => {
         <table v-else class="w-full border-collapse text-[0.78rem]">
           <thead>
             <tr class="border-b border-hairline text-left text-mute">
-              <th class="px-4 py-2 font-normal">日期</th>
-              <th class="px-2 py-2 font-normal">每日快照</th>
-              <th class="px-2 py-2 font-normal">回測</th>
-              <th class="px-2 py-2 font-normal">淨報酬</th>
-              <th class="px-4 py-2 font-normal">勝率</th>
+              <th class="px-3 py-2 font-normal">日期</th>
+              <th class="px-2 py-2 font-normal text-center">快照</th>
+              <th class="px-2 py-2 font-normal">基準淨利 / 勝率</th>
+              <th class="px-3 py-2 font-normal text-surge">★ 高級淨利 / 勝率</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.date" class="border-b border-hairline/50">
-              <td class="px-4 py-1.5 font-mono text-paper">{{ item.date }}</td>
+              <td class="px-3 py-1.5 font-mono text-paper">{{ item.date }}</td>
               <td class="px-2 py-1.5 text-center">{{ item.hasDailySnapshot ? '✓' : '—' }}</td>
-              <td class="px-2 py-1.5 text-center">
-                <span v-if="!item.backtest" class="text-mute">—</span>
-                <span v-else-if="item.backtest.executedCount === 0" class="text-mute" :title="'選出 ' + item.backtest.selectedCount + ' 檔，成交 0 檔'">無成交</span>
-                <span v-else>{{ item.backtest.executedCount }}/{{ item.backtest.selectedCount }} 檔</span>
+              <td class="px-2 py-1.5 font-mono">
+                <template v-if="item.backtest">
+                  <span :class="netReturnColorClass(item.backtest.netReturnPercent)">{{ formatPercent(item.backtest.netReturnPercent) }}</span>
+                  <span class="text-mute text-[0.7rem] ml-1">({{ formatPercent(item.backtest.winRatePercent) }})</span>
+                </template>
+                <span v-else class="text-mute">—</span>
               </td>
-              <td class="px-2 py-1.5 font-mono" :class="item.backtest ? netReturnColorClass(item.backtest.netReturnPercent) : 'text-mute'">
-                {{ item.backtest ? formatPercent(item.backtest.netReturnPercent) : '—' }}
-              </td>
-              <td class="px-4 py-1.5 font-mono text-mute">
-                {{ item.backtest ? formatPercent(item.backtest.winRatePercent) : '—' }}
+              <td class="px-3 py-1.5 font-mono">
+                <template v-if="item.backtest && item.backtest.adv">
+                  <span :class="netReturnColorClass(item.backtest.adv.netReturnPercent)">{{ formatPercent(item.backtest.adv.netReturnPercent) }}</span>
+                  <span class="text-surge font-bold text-[0.7rem] ml-1">({{ formatPercent(item.backtest.adv.winRatePercent) }})</span>
+                </template>
+                <span v-else class="text-mute">—</span>
               </td>
             </tr>
           </tbody>

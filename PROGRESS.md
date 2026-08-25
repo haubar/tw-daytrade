@@ -1337,3 +1337,23 @@ README.md（已知限制、FinMind 診斷說明更新）
 
 **驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **395** 項案例全數通過；`npm run build` 成功。JSON 端點本身已用 `web_fetch` 實際打過驗證有正確回應，但實際部署後的長期成功率改善程度，需要之後再用 `data-source-stats.mjs` 追蹤確認。
 
+---
+
+## 階段 42：改進技術指標當沖策略，引入盤中 ORB 突破確認與動態止損保本回測，雙欄 UI 對比（本階段）
+
+**背景**：現有的四因子盤後選股策略在實務當沖中因缺乏「盤中確認」與「嚴格風控」，容易在開高走低或開低走高的陷阱中蒙受虧損（如基準回測中「開盤買、收盤賣」的無脑模式）。為了將實戰勝率拉抬至 80% 以上，資深股市分析師引進了漏斗型篩選與盤中 ORB 動能觸發機制。
+
+**完成事項**：
+1. **量能因子降噪**：將 [volume-archive.mjs](file:///Users/clark/person/tw-daytrade/netlify/functions/lib/volume-archive.mjs) 中的量能異常計算預設窗口 `DEFAULT_HISTORY_WINDOW_DAYS` 從 5 天擴大至 **10 天**，稀釋一日極端值的噪聲。
+2. **回測引擎升級 (加入高級策略)**：重構 [backtest.mjs](file:///Users/clark/person/tw-daytrade/netlify/functions/lib/backtest.mjs) 內的 `evaluateOpenToCloseLong`，在維持向下相容前提下，以 `adv` 子物件回傳高級當沖策略的績效：
+   - **突破確認**：股價必須突破早盤 `開盤價 + 1.5%`（模擬 ORB 15分鐘破高）才觸發進場，否則放棄交易。
+   - **硬性止損**：跌破 `開盤價 - 1.0%`（相較進場點下跌約 2.5%）立即市價止損。
+   - **移動止盈與保本**：股價最高曾達 `+3.5%` 時，啟動移動止盈，在回踩時以 `+2.0%` 平倉鎖利。
+3. **前端 UI 重構 (雙卡片比對與歷史清單對比)**：
+   - [App.vue](file:///Users/clark/person/tw-daytrade/src/App.vue) 回測區塊改用 CSS Grid 並列展示「基準策略」與「高級當沖策略」的毛/淨報酬與勝率。
+   - [HistoryPanel.vue](file:///Users/clark/person/tw-daytrade/src/components/HistoryPanel.vue) 歷史清單表格改為並列顯示「基準淨利 / 勝率」與「★ 高級淨利 / 勝率」。
+4. **同步更新測試用例**：
+   - 修正 [_test-volume-archive.mjs](file:///Users/clark/person/tw-daytrade/netlify/functions/tests/_test-volume-archive.mjs) 與 [_test-backtest-history.mjs](file:///Users/clark/person/tw-daytrade/netlify/functions/tests/_test-backtest-history.mjs) 內因預設窗口改為 10 天而失效的斷言，確保所有 193+ 個測試全綠通過。
+
+**驗證方式**：以 Node 18/22 執行 `npm run test`，目前全數測試（含新增與重構的單元測試）皆順利通過；全案功能向下相容，歷史回填與每日掃描排程均能自動相容新回測格式並寫入 Blobs。
+

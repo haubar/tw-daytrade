@@ -1312,4 +1312,28 @@ README.md（已知限制、FinMind 診斷說明更新）
 
 **驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **357** 項案例全數通過（無新增測試——這次是接上既有、已測試過的 `getExchangeHolidaysForYears`／`getPastTradingDayCandidates(dynamicHolidays)`／`getNextTradingDay(dynamicHolidays)`，這幾個函式本身的邏輯在階段 38／回填控制頁那次已經測過，這裡只是新增呼叫端，不是新邏輯）；`npm run build` 成功。
 
+---
+
+## 階段 41：資料源穩定度統計工具揭露重大問題——T86 端點路徑錯誤，改用 JSON 版本修正
+
+**背景**：部署 `data-source-stats.mjs` 統計工具後，實際打了 `?days=20` 算出過去20個交易日各資料源的真實成功/失敗率，結果發現：
+
+- `institutional`（三大法人買賣超）**失敗率 100%**，20天全部失敗，其中17天的錯誤訊息是不正常的「失敗: null」
+- `tpex` 失敗率 50%
+- `finmindTpexInstitutional` 只要真的有觸發查詢就幾乎全部失敗（但因為訊息措辭問題，原本的統計工具誤判成 unknown，沒有正確反映）
+
+**追查過程**：
+1. 先發現「失敗: null」的根因是 `scan.mjs` 的錯誤分類邏輯有 bug：`institutionalWarning` 只在「fetch丟例外」跟「日期對不上」兩種情況會被設定，但還有第三種情況完全沒考慮到——**fetch 本身成功、沒丟例外，但解析出來的資料是空的**，這種情況 `institutionalWarning` 一直是 `null`，卻因為 `institutionalNetBuy.size===0` 掉進「失敗」分支，印出誤導性的「失敗: null」
+2. 但這只解釋了「訊息為什麼難看」，不解釋「為什麼幾乎每天都解析出空結果」。用 `web_search` 查證後找到第三方技術文件，確認 TWSE T86 目前正確服務的路徑是 `https://www.twse.com.tw/rwd/zh/fund/T86`（多一段 `/rwd/zh/`），且支援結構穩定的 JSON 版本（`response=json`，回傳 `{stat, date, fields, data}`）——原本程式碼用的 `https://www.twse.com.tw/fund/T86?response=html`（少了路徑前綴）配 cheerio 解析 HTML，推測是這個路徑落差導致 HTML 結構跟預期的欄位比對邏輯抓不到資料
+3. 用 `web_fetch` 實際打了 JSON 端點驗證，確認真的能拿到正確結構的資料（含真實的證券代號、三大法人買賣超股數等欄位）
+
+**完成事項**：
+- `institutional.mjs`：整個重寫，改用 JSON 端點；`parseInstitutionalJson()` 取代原本的 `parseInstitutionalHtml()`，依欄位名稱（不是寫死位置）在 `fields` 陣列裡找索引；新增 `formatT86Date()` 處理 JSON 版本的純西元年日期格式（跟舊版 HTML 需要解析民國年的 `extractReportDate()` 不同，後者保留給 `history.mjs` 的另一個端點用）；移除不再需要的 `cheerio` 依賴
+- `scan.mjs`：修正錯誤分類邏輯，明確區分「抓取失敗」「日期對不上」「抓取成功但解析為空」三種情況，訊息措辭不再混淆；同時把 `finmindTpexInstitutional`（原本「⚠」開頭）、`taiex` 退回估計值（原本「改用估計值」開頭）等沒有依循 `ok`／`失敗` 命名慣例的訊息全部統一修正，讓 `data-source-stats.mjs` 能正確分類
+- `_test-institutional.mjs`：改用真實 JSON 樣本重寫測試（來自實際打 T86 JSON 端點拿到的真實資料，不是憑空編的）
+- `_test-integration-scan.mjs`：mock 的假資料格式同步改成 JSON
+- `_test-data-source-stats.mjs`：新增迴歸測試，驗證修正後的訊息措辭能被正確分類
+- README.md：新增「重要修正：T86 端點改用 JSON 版本」章節，記錄完整的追查過程
+
+**驗證方式**：以 Node 22.22.2 執行 `npm run test`，目前共 **395** 項案例全數通過；`npm run build` 成功。JSON 端點本身已用 `web_fetch` 實際打過驗證有正確回應，但實際部署後的長期成功率改善程度，需要之後再用 `data-source-stats.mjs` 追蹤確認。
 

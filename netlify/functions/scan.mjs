@@ -172,7 +172,15 @@ export default async (req) => {
     const marketChangeHistory = marketChangeHistoryResult.status === 'fulfilled' ? marketChangeHistoryResult.value : [];
 
     // 法人買賣超抓取失敗不應該讓整個掃描失敗——沒有這個因子還是可以用其他三個因子繼續產生結果，
-    // 只是這次的結果會少一個訊號來源，這裡把「抓取失敗」跟「抓到但日期對不上」分開判斷。
+    // 只是這次的結果會少一個訊號來源。這裡要分清楚三種完全不同的情況，不能混在一起：
+    // ①真的抓取失敗（fetch 丟例外：逾時、HTTP錯誤）②抓到但日期對不上③fetch 正常完成、
+    // 也沒有日期問題，但解析出來的 netBuyByCode 剛好是空的（例如非交易日、或官方格式跑掉）。
+    //
+    // 真實踩過的 bug：原本只處理①②，③這種情況 institutionalWarning 會一直是 null，
+    // 但下面組 dataSourceStatus 訊息時，只要 institutionalNetBuy.size===0 就會印出
+    // `失敗: ${institutionalWarning}`，變成看起來很嚇人的「失敗: null」——這其實不是「抓取失敗」，
+    // 是「有抓到回應，但解析結果是空的」，兩者原因、該採取的處理方式完全不同，混在一起
+    // 的訊息會誤導看的人去查「網路是不是斷了」，而不是去查「解析邏輯是不是有問題」。
     let institutionalNetBuy = new Map();
     let institutionalWarning = null;
     if (institutionalResult.status === 'fulfilled') {
@@ -182,6 +190,11 @@ export default async (req) => {
         // 這裡不是直接丟棄資料（資料本身可能還是有效的，只是不是今天的），而是清楚標記出來，
         // 讓看結果的人知道這個因子可能不是當日資料，之後再視情況決定要不要改成重試或直接排除。
         institutionalWarning = `法人買賣超資料日期與預期不符（預期 ${institutionalResult.value.requestedDate}，實際拿到 ${institutionalResult.value.actualDate}），本次結果可能不是最新的法人資料`;
+      } else if (institutionalNetBuy.size === 0) {
+        // 情況③：fetch 本身沒有問題，但解析出來是空的——常見原因是非交易日（T86 對非交易日
+        // 會明確回報查無資料，不是靜靜地退回上一個交易日）、或官方報表格式又變了導致欄位
+        // 比對不到。跟「抓取失敗」用完全不同的措辭，才不會誤導成網路問題。
+        institutionalWarning = `法人買賣超資料抓取成功，但解析結果是空的（可能是非交易日查無資料，或官方報表格式跟預期不同）`;
       }
     } else {
       institutionalWarning = `法人買賣超資料抓取失敗（本次結果的法人因子將全部視為中性）: ${institutionalResult.reason.message}`;
@@ -247,14 +260,20 @@ export default async (req) => {
         const parts = [`查詢 ${tpexCandidateCodes.length} 檔上櫃候選`, `成功 ${finmindNetBuy.size} 檔`];
         if (emptyStockIds.length > 0) parts.push(`空資料 ${emptyStockIds.length} 檔`);
         if (failedStockIds.length > 0) parts.push(`失敗 ${failedStockIds.length} 檔`);
-        finmindStatus = `${finmindNetBuy.size > 0 ? 'ok' : '⚠ 全部無有效資料'}（${parts.join('，')}）`;
+        // 訊息開頭統一用 'ok'／'失敗' 慣例（跟其他 dataSourceStatus 欄位一致），
+        // 才能被 data-source-stats.mjs 的 classifyStatus() 正確分類——原本這裡用「⚠」開頭，
+        // 沒有依循慣例，導致統計工具把「查了但全部沒抓到資料」誤判成 unknown（沒查），
+        // 沒辦法反映真實的失敗率。
+        finmindStatus = `${finmindNetBuy.size > 0 ? 'ok' : '失敗（全部無有效資料）'}（${parts.join('，')}）`;
 
         // 成功數是 0 時，把前 3 筆的診斷細節也附上，不用等下一輪再手動排查
         if (finmindNetBuy.size === 0 && debugInfo.length > 0) {
           finmindStatus += ` | 診斷樣本: ${JSON.stringify(debugInfo.slice(0, 3))}`;
         }
       } catch (e) {
-        finmindStatus = `查詢失敗（本次上櫃候選股的法人因子維持中性值）: ${e.message}`;
+        // 同樣統一用「失敗」開頭（原本是「查詢失敗」，"查詢"開頭會被 classifyStatus() 判斷成
+        // unknown，不是 failed，統計數字會少算這種真正的例外情況）
+        finmindStatus = `失敗（查詢時發生例外，本次上櫃候選股的法人因子維持中性值）: ${e.message}`;
       }
     }
 
@@ -276,7 +295,7 @@ export default async (req) => {
         relativeStrengthWindow: marketChangeHistory.length > 0
           ? `ok（累積 ${marketChangeHistory.length}/${DEFAULT_HISTORY_WINDOW_DAYS} 天，多日相對強弱因子已啟用）`
           : '尚未累積到任何一天的多日資料，相對強弱因子暫時全部使用單日版本（這是這次升級後才開始存的資料，需要幾個交易日重新累積）',
-        taiex: realTaiexChangePercent !== null ? 'ok（使用真實 TAIEX 指數）' : `改用估計值${taiexWarning ? ` ⚠ ${taiexWarning}` : ''}`,
+        taiex: realTaiexChangePercent !== null ? 'ok（使用真實 TAIEX 指數）' : `失敗，改用估計值${taiexWarning ? ` ⚠ ${taiexWarning}` : ''}`,
         finmindTpexInstitutional: finmindStatus,
         dayTradeEligibility: dayTradeEligibleCodes !== null
           ? `ok（${dayTradeEligibleCodes.size} 檔上市股票今天可以現股當沖；上櫃股票暫無資料源，一律顯示未知）`

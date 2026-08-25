@@ -37,6 +37,31 @@ assertEqual(classifyStatus(null), 'unknown', '傳入 null 應該安全歸類為 
 assertEqual(classifyStatus(undefined), 'unknown', '傳入 undefined 應該安全歸類為 unknown，不拋出例外');
 assertEqual(classifyStatus(''), 'unknown', '空字串應該歸類為 unknown');
 
+// ---- 真實踩過的措辭不一致問題：scan.mjs 原本有兩處訊息沒有依循 'ok'/'失敗' 開頭慣例，
+// 導致這裡把真正的失敗誤判成 unknown。已回頭修正 scan.mjs 的措辭，這裡驗證修正後的
+// 訊息格式能被正確分類，不是在分類器裡加特例 ----
+assertEqual(
+  classifyStatus('失敗（全部無有效資料）（查詢 20 檔上櫃候選，成功 0 檔，空資料 20 檔）'),
+  'failed',
+  '修正後的 finmindTpexInstitutional 全部無有效資料訊息（原本是「⚠」開頭）應該正確歸類為 failed'
+);
+assertEqual(
+  classifyStatus('失敗（查詢時發生例外，本次上櫃候選股的法人因子維持中性值）: some error'),
+  'failed',
+  '修正後的 finmindTpexInstitutional 查詢例外訊息（原本是「查詢失敗」開頭）應該正確歸類為 failed'
+);
+assertEqual(
+  classifyStatus('失敗，改用估計值 ⚠ TAIEX 指數抓取失敗'),
+  'failed',
+  '修正後的 taiex 退回估計值訊息（原本是「改用估計值」開頭）應該正確歸類為 failed'
+);
+assertEqual(
+  classifyStatus('法人買賣超資料抓取成功，但解析結果是空的（可能是非交易日查無資料，或官方報表格式跟預期不同）'),
+  'unknown',
+  '真正踩過的 bug 修正案例：fetch 成功但解析結果為空時的新訊息（不是「失敗」開頭），' +
+    '應該歸類為 unknown（既不是明確成功也不是明確失敗），不能再誤導成「失敗: null」那種看起來很嚴重的措辭'
+);
+
 // ---- summarizeDataSourceHistory：用真實踩過的情境組樣本資料 ----
 const snapshots = [
   { date: '2026-08-20', dataSourceStatus: { institutional: '失敗: timeout', tpex: '失敗: terminated', twse: 'ok (1325 檔)' } },

@@ -15,7 +15,7 @@
 
 - **上市**：TWSE OpenAPI `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`（已用即時資料驗證欄位）
 - **上櫃**：TPEx OpenAPI（欄位待部署後驗證，見下方「已知限制」）
-- **三大法人買賣超（上市）**：TWSE T86 日報，一次涵蓋全市場上市股票
+- **三大法人買賣超（上市）**：TWSE T86 日報（JSON 版本，見下方「重要修正」章節），一次涵蓋全市場上市股票
 - **三大法人買賣超（上櫃候選）**：[FinMind](https://finmindtrade.com/) `TaiwanStockInstitutionalInvestorsBuySell`，只對「第一輪觀察榜裡的上櫃股票」查詢（見下方「上櫃法人因子」說明），不是全市場
 - **TAIEX 指數**：TWSE OpenAPI `MI_INDEX`，抓取失敗時退回用全市場成交值加權平均漲跌幅估計
 
@@ -156,6 +156,12 @@ https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=YYYYMMDD&type=ALLBUT09
 原本規劃第四個因子是「隔日沖券商分點買賣超」，但實測發現 TWSE 的分點查詢系統（`bsr.twse.com.tw`）**有圖形驗證碼保護**，無法在 Netlify Function 裡自動化查詢（自動繞過驗證碼本身也不是應該做的事）。
 
 因此改用**三大法人買賣超日報**（外資＋投信＋自營商）取代：免費、有官方端點、可完全自動化、而且是全市場一次撈取（不需要「先篩選再逐檔查詢」的兩階段設計）。這不是真正的分點級資料，但是同樣屬於「有大額資金介入訊號」的免費籌碼面資料。
+
+### 重要修正：T86 端點改用 JSON 版本（原本的 HTML 版本幾乎每天都抓失敗）
+
+部署後用 `data-source-stats.mjs` 統計工具實際算過去20個交易日的資料，發現法人買賣超**失敗率高達 100%**——20天全部失敗，其中17天的錯誤訊息是不正常的「失敗: null」。追查後確認根因：原本用的端點 `https://www.twse.com.tw/fund/T86?response=html`（少了 `/rwd/zh/` 路徑前綴）配 cheerio 解析 HTML 表格，實際上這不是 TWSE 目前正確服務的路徑，導致解析邏輯抓不到欄位、靜靜地回傳空結果，又沒有丟出明確例外，讓 `scan.mjs` 的錯誤分類邏輯把「解析出來是空的」誤判成「失敗: null」這種看起來像網路問題、實際上是格式問題的訊息。
+
+已改用官方正確且結構穩定的 JSON 版本 `https://www.twse.com.tw/rwd/zh/fund/T86?date=...&selectType=ALL&response=json`（已用真實請求驗證過欄位跟資料），移除 cheerio 依賴，並把 `scan.mjs` 裡好幾處沒有依循 `ok`／`失敗` 開頭慣例的訊息措辭統一修正，讓 `data-source-stats.mjs` 能正確分類每個資料源的成功/失敗狀態。
 
 ## 關於「上櫃法人因子」的兩階段設計
 

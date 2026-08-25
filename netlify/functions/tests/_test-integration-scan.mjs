@@ -50,18 +50,16 @@ function tpexJsonFixture() {
   ];
 }
 
-function t86HtmlFixture(todayRocDateLabel) {
-  return `
-<html><body>
-<h3>${todayRocDateLabel} 三大法人買賣超日報</h3>
-<table>
-  <tr>
-    <th>證券代號</th><th>證券名稱</th><th>三大法人買賣超股數</th>
-  </tr>
-  <tr><td>2408</td><td>南亞科</td><td>6,200,000</td></tr>
-  <tr><td>3661</td><td>世芯-KY</td><td>-950,000</td></tr>
-</table>
-</body></html>`;
+function t86JsonFixture(todayIsoDateAsPlainDigits) {
+  return {
+    stat: 'OK',
+    date: todayIsoDateAsPlainDigits,
+    fields: ['證券代號', '證券名稱', '三大法人買賣超股數'],
+    data: [
+      ['2408', '南亞科', '6,200,000'],
+      ['3661', '世芯-KY', '-950,000'],
+    ],
+  };
 }
 
 function taiexJsonFixture() {
@@ -71,12 +69,12 @@ function taiexJsonFixture() {
   ];
 }
 
-function todayAsRocDateLabel() {
+function todayAsPlainDigits() {
   const now = new Date();
-  const rocYear = now.getFullYear() - 1911;
+  const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
   const d = String(now.getDate()).padStart(2, '0');
-  return `${rocYear}年${m}月${d}日`;
+  return `${y}${m}${d}`;
 }
 
 // ---- 安裝假的 fetch，依 URL 分流到對應的假資料 ----
@@ -99,7 +97,7 @@ globalThis.fetch = async (url) => {
     return { ok: true, json: async () => tpexJsonFixture() };
   }
   if (urlStr.includes('fund/T86')) {
-    return { ok: true, text: async () => t86HtmlFixture(todayAsRocDateLabel()) };
+    return { ok: true, json: async () => t86JsonFixture(todayAsPlainDigits()) };
   }
 
   throw new Error(`整合測試沒有預期到這個 URL 會被呼叫: ${urlStr}`);

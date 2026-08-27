@@ -8,7 +8,7 @@ import { fetchOneDay } from './lib/history.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
 import { getPastTradingDayCandidates, getNextTradingDay } from './lib/trading-day.mjs';
 import { screenWatchlists } from './lib/screen.mjs';
-import { evaluateOpenToCloseLong } from './lib/backtest.mjs';
+import { evaluateOpenToCloseLong, evaluateOpenToCloseShort } from './lib/backtest.mjs';
 import { saveBacktestResult } from './lib/backtest-storage.mjs';
 import { buildHistoricalBacktestWindows, parseBacktestDays, parseCursorDate, computeNextEndDate } from './lib/backtest-history.mjs';
 import { DEFAULT_HISTORY_WINDOW_DAYS } from './lib/volume-archive.mjs';
@@ -124,14 +124,17 @@ export default async (req) => {
         continue;
       }
       const screened = screenWatchlists(window.signal.quotes, buildVolumeHistory(window.history), institutional.netBuyByCode, { topN: TOP_N });
-      const evaluation = evaluateOpenToCloseLong(screened.longWatchlist, window.execution.quotes, { topN: TOP_N });
+      const longEvaluation = evaluateOpenToCloseLong(screened.longWatchlist, window.execution.quotes, { topN: TOP_N });
+      const shortEvaluation = evaluateOpenToCloseShort(screened.shortWatchlist, window.execution.quotes, { topN: TOP_N });
       const record = {
         signalDate: window.signal.date,
         executionDate: window.execution.date,
         generatedAt: new Date().toISOString(),
         marketCoverage: 'TWSE-only',
         factorCoverage: 'volume-gap-relativeStrength-institutional',
-        ...evaluation,
+        ...longEvaluation,
+        long: longEvaluation,
+        short: shortEvaluation,
       };
       await saveBacktestResult(record);
       results.push(record);

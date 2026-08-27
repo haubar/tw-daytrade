@@ -30,7 +30,7 @@ import { fetchTaiexChangePercent } from './lib/taiex.mjs';
 import { fetchDayTradeEligibleCodes } from './lib/day-trade-eligibility.mjs';
 import { screenWatchlists, getTpexCandidateCodes } from './lib/screen.mjs';
 import { getScanByDate, saveLatestScan } from './lib/storage.mjs';
-import { evaluateOpenToCloseLong } from './lib/backtest.mjs';
+import { evaluateOpenToCloseLong, evaluateOpenToCloseShort } from './lib/backtest.mjs';
 import { saveBacktestResult } from './lib/backtest-storage.mjs';
 import { isNonTradingDay, isMarketDataReady } from './lib/trading-day.mjs';
 import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
@@ -324,9 +324,9 @@ export default async (req) => {
       try {
         const signalDate = datesUsed[0];
         const signalScan = await getScanByDate(signalDate);
-        if (signalScan?.longWatchlist?.length > 0) {
+        if (signalScan?.longWatchlist?.length > 0 || signalScan?.shortWatchlist?.length > 0) {
           // 今天（執行日）如果有市場完全抓不到報價（例如上櫃端點逾時失敗），事先告訴
-          // evaluateOpenToCloseLong，讓它在 skipped 訊息裡分清楚「這是系統性資料源問題」
+          // evaluateOpenToCloseLong/Short，讓它在 skipped 訊息裡分清楚「這是系統性資料源問題」
           // 還是「這幾檔股票本身有問題」（見 backtest.mjs 的說明；這是實際發生過的真實案例：
           // 昨天多方榜剛好選到上櫃股票，今天上櫃資料源整個失敗，10 檔全部被跳過，
           // 原本的通用訊息會讓人誤以為是個股層級的異常）。
@@ -334,11 +334,20 @@ export default async (req) => {
           if (tpexResult.status !== 'fulfilled') unavailableMarkets.add('TPEx');
           if (twseResult.status !== 'fulfilled') unavailableMarkets.add('TWSE');
 
+          const longEvaluation = signalScan.longWatchlist?.length > 0
+            ? evaluateOpenToCloseLong(signalScan.longWatchlist, todayQuotes, { unavailableMarkets })
+            : null;
+          const shortEvaluation = signalScan.shortWatchlist?.length > 0
+            ? evaluateOpenToCloseShort(signalScan.shortWatchlist, todayQuotes, { unavailableMarkets })
+            : null;
+
           const backtestResult = {
             signalDate,
             executionDate: todayDateStr,
             generatedAt: new Date().toISOString(),
-            ...evaluateOpenToCloseLong(signalScan.longWatchlist, todayQuotes, { unavailableMarkets }),
+            ...(longEvaluation ?? {}), // backward compatibility
+            long: longEvaluation,
+            short: shortEvaluation,
           };
           await saveBacktestResult(backtestResult);
           payload.backtest = backtestResult;

@@ -153,3 +153,135 @@ export function evaluateOpenToCloseLong(signalItems, executionQuotes, options = 
 
   return baseResult;
 }
+
+/**
+ * 以等權重計算訊號日的空方榜，在執行日開盤賣出（放空）、收盤買入（回補）的單日績效。
+ * @param {Array<{code:string, name?:string, market?:string, dayTradeEligible?:boolean|null}>} signalItems
+ * @param {Array<{code:string, name?:string, open:number, close:number}>} executionQuotes
+ * @param {{topN?:number, commissionRate?:number, taxRate?:number, unavailableMarkets?:Set<string>}} [options]
+ */
+export function evaluateOpenToCloseShort(signalItems, executionQuotes, options = {}) {
+  const {
+    topN = DEFAULT_TOP_N,
+    commissionRate = DEFAULT_COMMISSION_RATE,
+    taxRate = DEFAULT_DAY_TRADE_TAX_RATE,
+    unavailableMarkets = new Set(),
+  } = options;
+
+  const quoteByCode = new Map((executionQuotes ?? []).map((quote) => [quote.code, quote]));
+  const selected = (signalItems ?? [])
+    .slice(0, topN)
+    .filter((item) => item?.code && item.dayTradeEligible !== false);
+  const skipped = [];
+  const trades = [];
+
+  for (const item of selected) {
+    const quote = quoteByCode.get(item.code);
+    if (!quote || !validPrice(quote.open) || !validPrice(quote.close)) {
+      const reason = item.market && unavailableMarkets.has(item.market)
+        ? `執行日當天「${item.market}」市場資料抓取失敗，非個股本身問題`
+        : '缺少有效的隔日開盤或收盤價格';
+      skipped.push({ code: item.code, reason });
+      continue;
+    }
+
+    const grossReturnPercent = ((quote.open - quote.close) / quote.open) * 100;
+    const netReturnPercent = (((quote.open * (1 - commissionRate - taxRate)) - quote.close * (1 + commissionRate)) / (quote.open * (1 + commissionRate))) * 100;
+    trades.push({
+      code: item.code,
+      name: item.name ?? quote.name ?? '',
+      entryPrice: quote.open,
+      exitPrice: quote.close,
+      grossReturnPercent,
+      netReturnPercent,
+    });
+  }
+
+  const average = (field) => trades.length === 0 ? null : trades.reduce((sum, trade) => sum + trade[field], 0) / trades.length;
+
+  const baseResult = {
+    strategy: 'short-open-to-close-equal-weight',
+    configuredTopN: topN,
+    selectedCount: selected.length,
+    executedCount: trades.length,
+    skipped,
+    commissionRate,
+    taxRate,
+    grossReturnPercent: average('grossReturnPercent'),
+    netReturnPercent: average('netReturnPercent'),
+    winRatePercent: trades.length === 0 ? null : (trades.filter((trade) => trade.netReturnPercent > 0).length / trades.length) * 100,
+    trades,
+  };
+
+  const advTrades = [];
+  const advSkipped = [];
+
+  for (const item of selected) {
+    const quote = quoteByCode.get(item.code);
+    if (!quote || !validPrice(quote.open) || !validPrice(quote.close)) {
+      const reason = item.market && unavailableMarkets.has(item.market)
+        ? `執行日當天「${item.market}」市場資料抓取失敗，非個股本身問題`
+        : '缺少有效的隔日開盤或收盤價格';
+      advSkipped.push({ code: item.code, reason });
+      continue;
+    }
+
+    const { open, high, low, close } = quote;
+    
+    // 盤中進場觸發價：開盤價 - 1.5% (模擬向下突破早盤低點)
+    const triggerSellPrice = Math.round(open * 0.985 * 100) / 100;
+    
+    // 如果當天最低價根本沒有跌破觸發價，代表空方動能未確認，今天「不進場」
+    if (low > triggerSellPrice) {
+      advSkipped.push({ code: item.code, reason: '未達到盤中動能觸發價 (未破低)' });
+      continue;
+    }
+
+    // 進場後的止損價：開盤價 + 1.0% (極速止損)
+    const stopLossPrice = Math.round(open * 1.01 * 100) / 100;
+    
+    let exitPrice = close;
+    let exitReason = '收盤強制平倉';
+
+    // 模擬盤中走勢的保守假設：
+    // 1. 若當天最高價高於止損價，且我們是在觸發後才遇到最高點（保守估計為觸發止損）
+    if (high >= stopLossPrice) {
+      exitPrice = stopLossPrice;
+      exitReason = '觸發盤中硬性止損';
+    } 
+    // 2. 模擬移動止盈：若盤中最低價曾達到開盤 -3.5% 以下，啟動保本/移動止盈，在回彈時以 -2.0% 出場
+    else if (low <= open * 0.965) {
+      exitPrice = Math.round(open * 0.98 * 100) / 100;
+      exitReason = '觸發保本/移動止盈';
+    }
+
+    const grossReturnPercent = ((triggerSellPrice - exitPrice) / triggerSellPrice) * 100;
+    const netReturnPercent = (((triggerSellPrice * (1 - commissionRate - taxRate)) - exitPrice * (1 + commissionRate)) / (triggerSellPrice * (1 + commissionRate))) * 100;
+
+    advTrades.push({
+      code: item.code,
+      name: item.name ?? quote.name ?? '',
+      entryPrice: triggerSellPrice,
+      exitPrice,
+      exitReason,
+      grossReturnPercent,
+      netReturnPercent,
+    });
+  }
+
+  const advAverage = (field) => advTrades.length === 0 ? null : advTrades.reduce((sum, trade) => sum + trade[field], 0) / advTrades.length;
+
+  baseResult.adv = {
+    strategy: 'short-high-winrate-orb',
+    selectedCount: selected.length,
+    executedCount: advTrades.length,
+    skippedCount: advSkipped.length,
+    skipped: advSkipped,
+    grossReturnPercent: advAverage('grossReturnPercent'),
+    netReturnPercent: advAverage('netReturnPercent'),
+    winRatePercent: advTrades.length === 0 ? null : (advTrades.filter((trade) => trade.netReturnPercent > 0).length / advTrades.length) * 100,
+    trades: advTrades,
+  };
+
+  return baseResult;
+}

@@ -15,7 +15,29 @@ const isOpen = ref(false);
 const isLoading = ref(false);
 const loadError = ref(null);
 const items = ref([]);
+const rollingStats = ref(null);
 const hasLoadedOnce = ref(false);
+
+// 個股勝率排行是另一個獨立的查詢（要掃過去最多 60 天的完整回測明細，比歷史列表本身重），
+// 用按鈕觸發才查，不要一開面板就自動打，避免每次「上下左右」都觸發一次重查詢。
+const stockRankLoading = ref(false);
+const stockRankError = ref(null);
+const stockRankResult = ref(null);
+const stockRankStrategy = ref('base'); // 'base' 或 'adv'
+
+async function loadStockWinRates() {
+  stockRankLoading.value = true;
+  stockRankError.value = null;
+  try {
+    const res = await fetch(`/.netlify/functions/stock-win-rate?strategy=${stockRankStrategy.value}&minTrades=3&limit=20`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    stockRankResult.value = await res.json();
+  } catch (e) {
+    stockRankError.value = e.message;
+  } finally {
+    stockRankLoading.value = false;
+  }
+}
 
 // 必須照這個順序（上→下→左→右）依序按對，面板才會出現，隨便按方向鍵沒有用。
 // 這是刻意設計成不容易誤觸的隱藏功能，不是「按任一個方向鍵」那麼寬鬆。
@@ -31,6 +53,7 @@ async function loadHistoryIndex() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     items.value = data.items ?? [];
+    rollingStats.value = data.rollingStats ?? null;
     hasLoadedOnce.value = true;
   } catch (e) {
     loadError.value = e.message;
@@ -100,7 +123,91 @@ const netReturnColorClass = (value) => {
         依序按「上→下→左→右」叫出這個面板；顯示每一天「是否有成功抓到每日行情快照」跟「是否有回測結果」。
       </p>
 
+      <div v-if="rollingStats" class="border-b border-hairline px-4 py-3 text-[0.72rem]">
+        <p class="m-0 mb-2 text-mute">
+          滾動彙總（併總勝率＝總勝場 ÷ 總進場場次，不是每天百分比取平均；進場覆蓋率＝實際進場 ÷ 選出檔數，覆蓋率低代表樣本小，勝率參考價值也較低）
+        </p>
+        <table class="w-full border-collapse">
+          <thead>
+            <tr class="text-left text-mute">
+              <th class="py-1 font-normal">區間</th>
+              <th class="py-1 font-normal">基準併總勝率</th>
+              <th class="py-1 font-normal">基準進場覆蓋率</th>
+              <th class="py-1 font-normal text-surge">★高級併總勝率</th>
+              <th class="py-1 font-normal text-surge">★高級進場覆蓋率</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="n in [5, 20]" :key="n">
+              <td class="py-1 text-paper">近 {{ n }} 個交易日{{ rollingStats.base['window' + n]?.tradingDays < n ? `（僅 ${rollingStats.base['window' + n]?.tradingDays} 天有資料）` : '' }}</td>
+              <td class="py-1 font-mono" :class="netReturnColorClass((rollingStats.base['window' + n]?.pooledWinRatePercent ?? 0) - 50)">
+                {{ formatPercent(rollingStats.base['window' + n]?.pooledWinRatePercent) }}
+              </td>
+              <td class="py-1 font-mono text-mute">{{ formatPercent(rollingStats.base['window' + n]?.executionCoveragePercent) }}</td>
+              <td class="py-1 font-mono" :class="netReturnColorClass((rollingStats.adv['window' + n]?.pooledWinRatePercent ?? 0) - 50)">
+                {{ formatPercent(rollingStats.adv['window' + n]?.pooledWinRatePercent) }}
+              </td>
+              <td class="py-1 font-mono text-mute">{{ formatPercent(rollingStats.adv['window' + n]?.executionCoveragePercent) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <div class="max-h-[60vh] overflow-y-auto">
+        <div class="border-b border-hairline px-4 py-3 text-[0.72rem]">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <p class="m-0 text-mute">
+              個股勝率排行：跨過去交易日彙總「每支股票每次被選中後」的個人勝率（樣本數 ≥ 3 才列入，避免一兩次剛好贏就誤判成高勝率）。
+            </p>
+          </div>
+          <div class="flex items-center gap-2 mb-2">
+            <button
+              type="button"
+              class="rounded-sm border border-hairline px-2 py-1 text-[0.7rem]"
+              :class="stockRankStrategy === 'base' ? 'bg-panel text-paper' : 'text-mute'"
+              @click="stockRankStrategy = 'base'; loadStockWinRates()"
+            >基準策略</button>
+            <button
+              type="button"
+              class="rounded-sm border border-hairline px-2 py-1 text-[0.7rem]"
+              :class="stockRankStrategy === 'adv' ? 'bg-panel text-surge' : 'text-mute'"
+              @click="stockRankStrategy = 'adv'; loadStockWinRates()"
+            >★ 高級策略</button>
+            <button type="button" class="rounded-sm border border-hairline px-2 py-1 text-[0.7rem] text-mute" @click="loadStockWinRates">
+              {{ stockRankResult ? '重新查詢' : '查詢近 60 個交易日' }}
+            </button>
+          </div>
+
+          <p v-if="stockRankLoading" class="m-0 text-center text-mute">正在彙總個股勝率…</p>
+          <p v-else-if="stockRankError" class="m-0 text-center text-ebb">讀取失敗：{{ stockRankError }}</p>
+          <template v-else-if="stockRankResult">
+            <p class="m-0 mb-2 text-mute">
+              掃描了 {{ stockRankResult.daysScanned }} 個交易日，共出現 {{ stockRankResult.distinctStocksSeen }} 支不重複個股，符合最小樣本數的有 {{ stockRankResult.items.length }} 支。
+            </p>
+            <p v-if="stockRankResult.items.length === 0" class="m-0 text-center text-mute py-2">目前沒有任何個股累積到最小樣本數，資料還不夠多。</p>
+            <table v-else class="w-full border-collapse">
+              <thead>
+                <tr class="text-left text-mute">
+                  <th class="py-1 font-normal">股票</th>
+                  <th class="py-1 font-normal text-right">樣本數</th>
+                  <th class="py-1 font-normal text-right">勝率</th>
+                  <th class="py-1 font-normal text-right">平均淨報酬</th>
+                  <th class="py-1 font-normal text-right">最近出現</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in stockRankResult.items" :key="s.code" class="border-t border-hairline/50">
+                  <td class="py-1 text-paper font-mono">{{ s.code }} {{ s.name }}</td>
+                  <td class="py-1 text-right font-mono text-mute">{{ s.wins }}/{{ s.trades }}</td>
+                  <td class="py-1 text-right font-mono" :class="netReturnColorClass(s.winRatePercent - 50)">{{ formatPercent(s.winRatePercent) }}</td>
+                  <td class="py-1 text-right font-mono" :class="netReturnColorClass(s.avgNetReturnPercent)">{{ formatPercent(s.avgNetReturnPercent) }}</td>
+                  <td class="py-1 text-right font-mono text-mute">{{ s.lastSeenDate }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </template>
+        </div>
+
         <p v-if="isLoading" class="px-4 py-6 text-center font-mono text-sm text-mute">正在讀取歷史資料索引…</p>
         <p v-else-if="loadError" class="px-4 py-6 text-center font-mono text-sm text-ebb">讀取失敗：{{ loadError }}</p>
         <p v-else-if="items.length === 0" class="px-4 py-6 text-center font-mono text-sm text-mute">目前還沒有任何累積資料。</p>
@@ -121,14 +228,14 @@ const netReturnColorClass = (value) => {
               <td class="px-2 py-1.5 font-mono">
                 <template v-if="item.backtest">
                   <span :class="netReturnColorClass(item.backtest.netReturnPercent)">{{ formatPercent(item.backtest.netReturnPercent) }}</span>
-                  <span class="text-mute text-[0.7rem] ml-1">({{ formatPercent(item.backtest.winRatePercent) }})</span>
+                  <span class="text-mute text-[0.7rem] ml-1">({{ formatPercent(item.backtest.winRatePercent) }}・{{ item.backtest.executedCount }}/{{ item.backtest.selectedCount }})</span>
                 </template>
                 <span v-else class="text-mute">—</span>
               </td>
               <td class="px-3 py-1.5 font-mono">
                 <template v-if="item.backtest && item.backtest.adv">
                   <span :class="netReturnColorClass(item.backtest.adv.netReturnPercent)">{{ formatPercent(item.backtest.adv.netReturnPercent) }}</span>
-                  <span class="text-surge font-bold text-[0.7rem] ml-1">({{ formatPercent(item.backtest.adv.winRatePercent) }})</span>
+                  <span class="text-surge font-bold text-[0.7rem] ml-1">({{ formatPercent(item.backtest.adv.winRatePercent) }}・{{ item.backtest.adv.executedCount }}/{{ item.backtest.adv.selectedCount }})</span>
                 </template>
                 <span v-else class="text-mute">—</span>
               </td>

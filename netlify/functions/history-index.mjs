@@ -11,7 +11,7 @@
 
 import { getArchivedDates } from './lib/volume-archive.mjs';
 import { getBacktestIndex, getBacktestResultByDate } from './lib/backtest-storage.mjs';
-import { mergeDateLists, summarizeBacktest, buildHistoryItems } from './lib/history-index.mjs';
+import { mergeDateLists, summarizeBacktest, buildHistoryItems, computeRollingStats } from './lib/history-index.mjs';
 
 export default async () => {
   try {
@@ -29,9 +29,12 @@ export default async () => {
     );
 
     const items = buildHistoryItems(allDates, archivedDates, backtestSummaryByDate);
+    // 滾動彙總用「近 N 個有回測資料的交易日」，跟 items 同一份新到舊排序的資料算，
+    // 不用另外重查一次 Blobs。
+    const rollingStats = computeRollingStats(items);
 
     return new Response(
-      JSON.stringify({ generatedAt: new Date().toISOString(), items }, null, 2),
+      JSON.stringify({ generatedAt: new Date().toISOString(), items, rollingStats }, null, 2),
       { headers: { 'content-type': 'application/json; charset=utf-8' } }
     );
   } catch (e) {

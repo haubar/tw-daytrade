@@ -127,30 +127,66 @@ const netReturnColorClass = (value) => {
         <p class="m-0 mb-2 text-mute">
           滾動彙總（併總勝率＝總勝場 ÷ 總進場場次，不是每天百分比取平均；進場覆蓋率＝實際進場 ÷ 選出檔數，覆蓋率低代表樣本小，勝率參考價值也較低）
         </p>
-        <table class="w-full border-collapse">
+
+        <!-- 📈 多方滾動統計 -->
+        <h4 class="m-0 mb-1 text-[0.72rem] font-bold text-surge">📈 多方</h4>
+        <table class="w-full border-collapse mb-3">
           <thead>
             <tr class="text-left text-mute">
               <th class="py-1 font-normal">區間</th>
               <th class="py-1 font-normal">基準併總勝率</th>
-              <th class="py-1 font-normal">基準進場覆蓋率</th>
+              <th class="py-1 font-normal">基準累積淨利</th>
               <th class="py-1 font-normal text-surge">★高級併總勝率</th>
               <th class="py-1 font-normal text-surge">★高級進場覆蓋率</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="n in [5, 20]" :key="n">
-              <td class="py-1 text-paper">近 {{ n }} 個交易日{{ rollingStats.base['window' + n]?.tradingDays < n ? `（僅 ${rollingStats.base['window' + n]?.tradingDays} 天有資料）` : '' }}</td>
-              <td class="py-1 font-mono" :class="netReturnColorClass((rollingStats.base['window' + n]?.pooledWinRatePercent ?? 0) - 50)">
-                {{ formatPercent(rollingStats.base['window' + n]?.pooledWinRatePercent) }}
+              <td class="py-1 text-paper">近 {{ n }} 日{{ (rollingStats.long?.base?.['window' + n] ?? rollingStats.base?.['window' + n])?.tradingDays < n ? `（僅 ${(rollingStats.long?.base?.['window' + n] ?? rollingStats.base?.['window' + n])?.tradingDays} 天）` : '' }}</td>
+              <td class="py-1 font-mono" :class="netReturnColorClass(((rollingStats.long?.base?.['window' + n] ?? rollingStats.base?.['window' + n])?.pooledWinRatePercent ?? 0) - 50)">
+                {{ formatPercent((rollingStats.long?.base?.['window' + n] ?? rollingStats.base?.['window' + n])?.pooledWinRatePercent) }}
               </td>
-              <td class="py-1 font-mono text-mute">{{ formatPercent(rollingStats.base['window' + n]?.executionCoveragePercent) }}</td>
-              <td class="py-1 font-mono" :class="netReturnColorClass((rollingStats.adv['window' + n]?.pooledWinRatePercent ?? 0) - 50)">
-                {{ formatPercent(rollingStats.adv['window' + n]?.pooledWinRatePercent) }}
+              <td class="py-1 font-mono" :class="netReturnColorClass((rollingStats.long?.base?.['window' + n] ?? rollingStats.base?.['window' + n])?.compoundNetReturnPercent)">
+                {{ formatPercent((rollingStats.long?.base?.['window' + n] ?? rollingStats.base?.['window' + n])?.compoundNetReturnPercent) }}
               </td>
-              <td class="py-1 font-mono text-mute">{{ formatPercent(rollingStats.adv['window' + n]?.executionCoveragePercent) }}</td>
+              <td class="py-1 font-mono" :class="netReturnColorClass(((rollingStats.long?.adv?.['window' + n] ?? rollingStats.adv?.['window' + n])?.pooledWinRatePercent ?? 0) - 50)">
+                {{ formatPercent((rollingStats.long?.adv?.['window' + n] ?? rollingStats.adv?.['window' + n])?.pooledWinRatePercent) }}
+              </td>
+              <td class="py-1 font-mono text-mute">{{ formatPercent((rollingStats.long?.adv?.['window' + n] ?? rollingStats.adv?.['window' + n])?.executionCoveragePercent) }}</td>
             </tr>
           </tbody>
         </table>
+
+        <!-- 📉 空方滾動統計 -->
+        <template v-if="rollingStats.short">
+          <h4 class="m-0 mb-1 text-[0.72rem] font-bold text-ebb">📉 空方</h4>
+          <table class="w-full border-collapse">
+            <thead>
+              <tr class="text-left text-mute">
+                <th class="py-1 font-normal">區間</th>
+                <th class="py-1 font-normal">基準併總勝率</th>
+                <th class="py-1 font-normal">基準累積淨利</th>
+                <th class="py-1 font-normal text-ebb">★高級併總勝率</th>
+                <th class="py-1 font-normal text-ebb">★高級進場覆蓋率</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="n in [5, 20]" :key="n">
+                <td class="py-1 text-paper">近 {{ n }} 日{{ rollingStats.short.base?.['window' + n]?.tradingDays < n ? `（僅 ${rollingStats.short.base?.['window' + n]?.tradingDays} 天）` : '' }}</td>
+                <td class="py-1 font-mono" :class="netReturnColorClass((rollingStats.short.base?.['window' + n]?.pooledWinRatePercent ?? 0) - 50)">
+                  {{ formatPercent(rollingStats.short.base?.['window' + n]?.pooledWinRatePercent) }}
+                </td>
+                <td class="py-1 font-mono" :class="netReturnColorClass(rollingStats.short.base?.['window' + n]?.compoundNetReturnPercent)">
+                  {{ formatPercent(rollingStats.short.base?.['window' + n]?.compoundNetReturnPercent) }}
+                </td>
+                <td class="py-1 font-mono" :class="netReturnColorClass((rollingStats.short.adv?.['window' + n]?.pooledWinRatePercent ?? 0) - 50)">
+                  {{ formatPercent(rollingStats.short.adv?.['window' + n]?.pooledWinRatePercent) }}
+                </td>
+                <td class="py-1 font-mono text-mute">{{ formatPercent(rollingStats.short.adv?.['window' + n]?.executionCoveragePercent) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
       </div>
 
       <div class="max-h-[60vh] overflow-y-auto">
@@ -217,25 +253,45 @@ const netReturnColorClass = (value) => {
             <tr class="border-b border-hairline text-left text-mute">
               <th class="px-3 py-2 font-normal">日期</th>
               <th class="px-2 py-2 font-normal text-center">快照</th>
-              <th class="px-2 py-2 font-normal">基準淨利 / 勝率</th>
-              <th class="px-3 py-2 font-normal text-surge">★ 高級淨利 / 勝率</th>
+              <th class="px-2 py-2 font-normal">📈 基準淨利 / 勝率</th>
+              <th class="px-2 py-2 font-normal text-surge">📈 ★高級</th>
+              <th class="px-2 py-2 font-normal">📉 基準淨利 / 勝率</th>
+              <th class="px-2 py-2 font-normal text-ebb">📉 ★高級</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.date" class="border-b border-hairline/50">
               <td class="px-3 py-1.5 font-mono text-paper">{{ item.date }}</td>
               <td class="px-2 py-1.5 text-center">{{ item.hasDailySnapshot ? '✓' : '—' }}</td>
+              <!-- 📈 多方基準 -->
               <td class="px-2 py-1.5 font-mono">
-                <template v-if="item.backtest">
-                  <span :class="netReturnColorClass(item.backtest.netReturnPercent)">{{ formatPercent(item.backtest.netReturnPercent) }}</span>
-                  <span class="text-mute text-[0.7rem] ml-1">({{ formatPercent(item.backtest.winRatePercent) }}・{{ item.backtest.executedCount }}/{{ item.backtest.selectedCount }})</span>
+                <template v-if="item.backtest?.long || item.backtest?.netReturnPercent != null">
+                  <span :class="netReturnColorClass((item.backtest.long ?? item.backtest).netReturnPercent)">{{ formatPercent((item.backtest.long ?? item.backtest).netReturnPercent) }}</span>
+                  <span class="text-mute text-[0.7rem] ml-1">({{ formatPercent((item.backtest.long ?? item.backtest).winRatePercent) }})</span>
                 </template>
                 <span v-else class="text-mute">—</span>
               </td>
-              <td class="px-3 py-1.5 font-mono">
-                <template v-if="item.backtest && item.backtest.adv">
-                  <span :class="netReturnColorClass(item.backtest.adv.netReturnPercent)">{{ formatPercent(item.backtest.adv.netReturnPercent) }}</span>
-                  <span class="text-surge font-bold text-[0.7rem] ml-1">({{ formatPercent(item.backtest.adv.winRatePercent) }}・{{ item.backtest.adv.executedCount }}/{{ item.backtest.adv.selectedCount }})</span>
+              <!-- 📈 多方高級 -->
+              <td class="px-2 py-1.5 font-mono">
+                <template v-if="(item.backtest?.long ?? item.backtest)?.adv">
+                  <span :class="netReturnColorClass((item.backtest.long ?? item.backtest).adv.netReturnPercent)">{{ formatPercent((item.backtest.long ?? item.backtest).adv.netReturnPercent) }}</span>
+                  <span class="text-surge font-bold text-[0.65rem] ml-0.5">({{ formatPercent((item.backtest.long ?? item.backtest).adv.winRatePercent) }})</span>
+                </template>
+                <span v-else class="text-mute">—</span>
+              </td>
+              <!-- 📉 空方基準 -->
+              <td class="px-2 py-1.5 font-mono">
+                <template v-if="item.backtest?.short">
+                  <span :class="netReturnColorClass(item.backtest.short.netReturnPercent)">{{ formatPercent(item.backtest.short.netReturnPercent) }}</span>
+                  <span class="text-mute text-[0.7rem] ml-1">({{ formatPercent(item.backtest.short.winRatePercent) }})</span>
+                </template>
+                <span v-else class="text-mute">—</span>
+              </td>
+              <!-- 📉 空方高級 -->
+              <td class="px-2 py-1.5 font-mono">
+                <template v-if="item.backtest?.short?.adv">
+                  <span :class="netReturnColorClass(item.backtest.short.adv.netReturnPercent)">{{ formatPercent(item.backtest.short.adv.netReturnPercent) }}</span>
+                  <span class="text-ebb font-bold text-[0.65rem] ml-0.5">({{ formatPercent(item.backtest.short.adv.winRatePercent) }})</span>
                 </template>
                 <span v-else class="text-mute">—</span>
               </td>

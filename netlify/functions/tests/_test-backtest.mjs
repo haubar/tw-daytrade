@@ -1,4 +1,4 @@
-import { evaluateOpenToCloseLong } from '../lib/backtest.mjs';
+import { evaluateOpenToCloseLong, evaluateOpenToCloseShort } from '../lib/backtest.mjs';
 import { getLatestBacktestResult, saveBacktestResult, getBacktestIndex, getBacktestResultByDate } from '../lib/backtest-storage.mjs';
 
 let passed = 0;
@@ -60,6 +60,67 @@ assertEqual(
   '缺少有效的隔日開盤或收盤價格',
   '沒有提供 unavailableMarkets 時（向後相容），應維持原本的通用訊息'
 );
+
+// ---- evaluateOpenToCloseShort：空方基準策略 ----
+const shortResult = evaluateOpenToCloseShort(
+  [{ code: 'A', name: '甲', dayTradeEligible: true }, { code: 'B', name: '乙', dayTradeEligible: false }, { code: 'C', name: '丙', dayTradeEligible: null }],
+  [{ code: 'A', open: 100, close: 90 }, { code: 'C', open: 100, close: 110 }],
+  { topN: 3, commissionRate: 0.001, taxRate: 0.002 }
+);
+assertEqual(shortResult.strategy, 'short-open-to-close-equal-weight', '空方：策略名稱應正確');
+assertEqual(shortResult.selectedCount, 2, '空方：明確不可當沖的股票不應進入基準策略');
+assertEqual(shortResult.executedCount, 2, '空方：有有效隔日價格的候選應執行');
+assertClose(shortResult.grossReturnPercent, 0, '空方：兩檔等權重 A 放空賺10%、C 放空虧10%，平均毛報酬應為 0%');
+// 空方淨報酬公式：(open*(1-commission-tax) - close*(1+commission)) / (open*(1+commission))
+// A: (100*0.997 - 90*1.001) / (100*1.001) = (99.7 - 90.09) / 100.1
+assertClose(
+  shortResult.trades[0].netReturnPercent,
+  ((100 * 0.997 - 90 * 1.001) / (100 * 1.001)) * 100,
+  '空方：淨報酬應正確扣除放空賣出的手續費、交易稅，以及回補買入的手續費'
+);
+assertEqual(shortResult.winRatePercent, 50, '空方：一贏一輸的勝率應為 50%');
+
+const shortMissing = evaluateOpenToCloseShort([{ code: 'D' }], [], { commissionRate: 0, taxRate: 0 });
+assertEqual(shortMissing.executedCount, 0, '空方：缺少執行日行情時不應產生假交易');
+assertEqual(shortMissing.skipped[0].code, 'D', '空方：缺少行情的股票應列入 skipped');
+
+// ---- evaluateOpenToCloseShort：高級 ORB 空方策略 ----
+// 模擬三種出場情境：止損、移動止盈、收盤平倉
+const shortAdvResult = evaluateOpenToCloseShort(
+  [
+    // 跌破觸發價但反彈觸發止損：open=100, trigger=98.5, low=98(觸發), high=101(≥stop=101), 應止損在101
+    { code: 'S1', name: '止損股', dayTradeEligible: true },
+    // 跌破觸發價且大跌觸發移動止盈：open=100, trigger=98.5, low=95(≤96.5觸發止盈), 應在98出場
+    { code: 'S2', name: '止盈股', dayTradeEligible: true },
+    // 跌破觸發價，未觸發止損也未觸發止盈，收盤平倉
+    { code: 'S3', name: '平倉股', dayTradeEligible: true },
+    // 未跌破觸發價，不進場
+    { code: 'S4', name: '不進場', dayTradeEligible: true },
+  ],
+  [
+    { code: 'S1', open: 100, high: 101, low: 98, close: 99 },
+    { code: 'S2', open: 100, high: 99, low: 95, close: 96 },
+    { code: 'S3', open: 100, high: 99, low: 98.6, close: 98.8 },
+    { code: 'S4', open: 100, high: 102, low: 99, close: 101 },
+  ],
+  { topN: 4, commissionRate: 0, taxRate: 0 }
+);
+// S4 應被跳過（未破低）
+assertEqual(shortAdvResult.adv.executedCount, 2, '空方高級：S1 止損、S2 止盈進場，S3 未破觸發價不進場，S4 也未破');
+// 等一下，S3 的 low=98.6 > trigger=98.5，所以 S3 也不進場。S1 的 low=98 <= 98.5 觸發。
+// 修正：S1 觸發(low=98<=98.5)、S2 觸發(low=95<=98.5)、S3 不觸發(low=98.6>98.5)、S4 不觸發(low=99>98.5)
+
+// S1: 進場98.5，high=101 >= stopLoss=101，止損出場在101
+const s1Trade = shortAdvResult.adv.trades.find(t => t.code === 'S1');
+assertEqual(s1Trade.exitReason, '觸發盤中硬性止損', '空方高級 S1：反彈超過止損價應觸發止損');
+assertClose(s1Trade.exitPrice, 101, '空方高級 S1：止損價應為開盤+1%=101');
+// S2: 進場98.5，low=95 <= 96.5(open*0.965)，觸發移動止盈，在 open*0.98=98 出場
+const s2Trade = shortAdvResult.adv.trades.find(t => t.code === 'S2');
+assertEqual(s2Trade.exitReason, '觸發保本/移動止盈', '空方高級 S2：大跌後回彈應觸發移動止盈');
+assertClose(s2Trade.exitPrice, 98, '空方高級 S2：移動止盈出場價應為開盤-2%=98');
+// S4 應在 skipped 裡
+const s4Skipped = shortAdvResult.adv.skipped.find(s => s.code === 'S4');
+assertEqual(s4Skipped.reason, '未達到盤中動能觸發價 (未破低)', '空方高級 S4：未破低的股票應標示未破低');
 
 const data = new Map();
 const store = { setJSON: async (key, value) => data.set(key, value), get: async (key) => data.get(key) ?? null };

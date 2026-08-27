@@ -26,26 +26,58 @@ export function mergeDateLists(archivedDates, backtestDates) {
  */
 export function summarizeBacktest(result) {
   if (!result) return null;
-  // wonCount 直接從 trades 明細算，不要用 winRatePercent 反推（四捨五入後的百分比乘回去
-  // 可能對不齊整數），這樣後面滾動勝率才能用「總勝場 ÷ 總場次」精確地跨多天彙總，
-  // 而不是對每天的百分比取平均（那樣小樣本的日子會被跟大樣本的日子等權重看待）。
   const countWon = (trades) => (Array.isArray(trades) ? trades.filter((t) => t.netReturnPercent > 0).length : 0);
-  return {
-    executionDate: result.executionDate ?? null,
-    executedCount: result.executedCount ?? 0,
-    selectedCount: result.selectedCount ?? 0,
-    wonCount: countWon(result.trades),
-    netReturnPercent: result.netReturnPercent ?? null,
-    winRatePercent: result.winRatePercent ?? null,
-    adv: result.adv
+
+  const longData = result.long || result;
+  const longSummary = {
+    executedCount: longData.executedCount ?? 0,
+    selectedCount: longData.selectedCount ?? 0,
+    wonCount: countWon(longData.trades),
+    netReturnPercent: longData.netReturnPercent ?? null,
+    winRatePercent: longData.winRatePercent ?? null,
+    adv: longData.adv
       ? {
-          executedCount: result.adv.executedCount ?? 0,
-          selectedCount: result.adv.selectedCount ?? 0,
-          wonCount: countWon(result.adv.trades),
-          netReturnPercent: result.adv.netReturnPercent ?? null,
-          winRatePercent: result.adv.winRatePercent ?? null,
+          executedCount: longData.adv.executedCount ?? 0,
+          selectedCount: longData.adv.selectedCount ?? 0,
+          wonCount: countWon(longData.adv.trades),
+          netReturnPercent: longData.adv.netReturnPercent ?? null,
+          winRatePercent: longData.adv.winRatePercent ?? null,
         }
       : null,
+  };
+
+  let shortSummary = null;
+  if (result.short) {
+    shortSummary = {
+      executedCount: result.short.executedCount ?? 0,
+      selectedCount: result.short.selectedCount ?? 0,
+      wonCount: countWon(result.short.trades),
+      netReturnPercent: result.short.netReturnPercent ?? null,
+      winRatePercent: result.short.winRatePercent ?? null,
+      adv: result.short.adv
+        ? {
+            executedCount: result.short.adv.executedCount ?? 0,
+            selectedCount: result.short.adv.selectedCount ?? 0,
+            wonCount: countWon(result.short.adv.trades),
+            netReturnPercent: result.short.adv.netReturnPercent ?? null,
+            winRatePercent: result.short.adv.winRatePercent ?? null,
+          }
+        : null,
+    };
+  }
+
+  return {
+    executionDate: result.executionDate ?? null,
+    // Keep top level for backward compatibility
+    executedCount: longSummary.executedCount,
+    selectedCount: longSummary.selectedCount,
+    wonCount: longSummary.wonCount,
+    netReturnPercent: longSummary.netReturnPercent,
+    winRatePercent: longSummary.winRatePercent,
+    adv: longSummary.adv,
+    // Structured data
+    long: longSummary,
+    short: shortSummary,
   };
 }
 
@@ -63,7 +95,7 @@ export function summarizeBacktest(result) {
  *
  * @param {Array<{date: string, backtest: Object|null}>} items buildHistoryItems() 的結果，需為新到舊排序
  * @param {number[]} [windowSizes]
- * @returns {{base: Object, adv: Object}} 每個 window size 一組統計，key 為 `window${N}`
+ * @returns {{base: Object, adv: Object, long: Object, short: Object}} 每個 window size 一組統計，key 為 `window${N}`
  */
 export function computeRollingStats(items, windowSizes = [5, 20]) {
   const withBacktest = (items ?? []).filter((it) => it?.backtest);
@@ -98,11 +130,22 @@ export function computeRollingStats(items, windowSizes = [5, 20]) {
     };
   }
 
-  const result = { base: {}, adv: {} };
+  const result = {
+    base: {},
+    adv: {},
+    long: { base: {}, adv: {} },
+    short: { base: {}, adv: {} }
+  };
   for (const n of windowSizes) {
     const days = withBacktest.slice(0, n);
-    result.base[`window${n}`] = summarizeWindow(days, (bt) => bt);
-    result.adv[`window${n}`] = summarizeWindow(days, (bt) => bt.adv);
+    // Backward compatibility:
+    result.base[`window${n}`] = summarizeWindow(days, (bt) => bt.long || bt);
+    result.adv[`window${n}`] = summarizeWindow(days, (bt) => (bt.long || bt).adv);
+    // Structured:
+    result.long.base[`window${n}`] = summarizeWindow(days, (bt) => bt.long || bt);
+    result.long.adv[`window${n}`] = summarizeWindow(days, (bt) => (bt.long || bt).adv);
+    result.short.base[`window${n}`] = summarizeWindow(days, (bt) => bt.short);
+    result.short.adv[`window${n}`] = summarizeWindow(days, (bt) => bt.short?.adv);
   }
   return result;
 }

@@ -12,14 +12,19 @@
 // 不能只看勝率數字。
 
 /**
- * 把多個訊號日的完整回測結果，彙總成「每支股票」的交易統計（基準策略跟高級策略分開算，
- * 因為兩者的進出場規則不同，同一天同一支股票在兩套策略下的輸贏可能不一樣）。
+ * 把多個訊號日的完整回測結果，彙總成「每支股票」的交易統計——多方基準／多方高級／
+ * 空方基準／空方高級，四種策略分開算，因為進出場規則完全不同，同一天同一支股票
+ * 在不同策略下的輸贏可能不一樣。
  *
  * @param {Array<Object|null>} results getBacktestResultByDate() 回傳的完整回測結果陣列
- *   （必須含 trades 明細，不能是 summarizeBacktest() 之後的摘要版——摘要版已經把 trades 濾掉了）
+ *   （必須含 trades 明細，不能是 summarizeBacktest() 之後的摘要版——摘要版已經把 trades 濾掉了。
+ *   result.short 是 evaluateOpenToCloseShort() 的完整輸出，見 backtest.mjs；
+ *   升級前存的舊回測結果沒有 short 欄位，這裡會安全跳過，不會拋出例外）
  * @returns {Map<string, {code:string, name:string, lastSeenDate:string|null,
  *   base:{trades:number, wins:number, sumNetReturn:number},
- *   adv:{trades:number, wins:number, sumNetReturn:number}}>}
+ *   adv:{trades:number, wins:number, sumNetReturn:number},
+ *   shortBase:{trades:number, wins:number, sumNetReturn:number},
+ *   shortAdv:{trades:number, wins:number, sumNetReturn:number}}>}
  */
 export function buildStockStats(results) {
   const map = new Map();
@@ -32,6 +37,8 @@ export function buildStockStats(results) {
         lastSeenDate: null,
         base: { trades: 0, wins: 0, sumNetReturn: 0 },
         adv: { trades: 0, wins: 0, sumNetReturn: 0 },
+        shortBase: { trades: 0, wins: 0, sumNetReturn: 0 },
+        shortAdv: { trades: 0, wins: 0, sumNetReturn: 0 },
       });
     }
     return map.get(code);
@@ -56,6 +63,8 @@ export function buildStockStats(results) {
     const date = result.executionDate ?? result.signalDate ?? null;
     absorb(result.trades, date, 'base');
     absorb(result.adv?.trades, date, 'adv');
+    absorb(result.short?.trades, date, 'shortBase');
+    absorb(result.short?.adv?.trades, date, 'shortAdv');
   }
 
   return map;
@@ -69,7 +78,9 @@ export function buildStockStats(results) {
  * 不是單純運氣好）；再相同才比平均報酬率。
  *
  * @param {Map} stockStatsMap buildStockStats() 的回傳值
- * @param {{strategy?: 'base'|'adv', minTrades?: number, limit?: number}} [options]
+ * @param {{strategy?: 'base'|'adv'|'shortBase'|'shortAdv', minTrades?: number, limit?: number}} [options]
+ *   strategy：'base'=多方基準（開盤買收盤賣）、'adv'=多方高級 ORB、
+ *   'shortBase'=空方基準（開盤放空收盤回補）、'shortAdv'=空方高級 ORB（跌破放空）
  * @returns {Array<{code:string, name:string, trades:number, wins:number,
  *   winRatePercent:number, avgNetReturnPercent:number, lastSeenDate:string|null}>}
  */

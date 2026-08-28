@@ -7,11 +7,14 @@
 // 的層級。查詢參數：
 //   days      要往回掃幾個訊號日（預設 60，上限 260＝backtest-storage 的保留上限）
 //   minTrades 最小樣本數門檻，濾掉只出現一兩次的個股（預設 3）
-//   strategy  'base'（預設，隔日開盤買收盤賣）或 'adv'（高級 ORB 突破策略）
+//   strategy  'base'（預設，多方隔日開盤買收盤賣）、'adv'（多方高級 ORB 突破買）、
+//             'shortBase'（空方隔日開盤放空收盤回補）、'shortAdv'（空方高級 ORB 跌破放空）
 //   limit     回傳前幾名（預設 30，上限 100）
 
 import { getBacktestIndex, getBacktestResultByDate } from './lib/backtest-storage.mjs';
 import { buildStockStats, rankStocksByWinRate } from './lib/stock-win-rate.mjs';
+
+const VALID_STRATEGIES = new Set(['base', 'adv', 'shortBase', 'shortAdv']);
 
 function clampInt(raw, fallback, min, max) {
   const n = Number.parseInt(raw, 10);
@@ -25,7 +28,8 @@ export default async (req) => {
     const days = clampInt(url.searchParams.get('days'), 60, 1, 260);
     const minTrades = clampInt(url.searchParams.get('minTrades'), 3, 1, 260);
     const limit = clampInt(url.searchParams.get('limit'), 30, 1, 100);
-    const strategy = url.searchParams.get('strategy') === 'adv' ? 'adv' : 'base';
+    const requestedStrategy = url.searchParams.get('strategy');
+    const strategy = VALID_STRATEGIES.has(requestedStrategy) ? requestedStrategy : 'base';
 
     const index = (await getBacktestIndex()).slice(0, days);
     // 逐日的完整回測結果（含 trades 明細），不能用 summarizeBacktest() 的摘要版，

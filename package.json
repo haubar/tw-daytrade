@@ -26,6 +26,7 @@
     "test:day-trade-eligibility": "node netlify/functions/tests/_test-day-trade-eligibility.mjs",
     "test:backfill-pick": "node netlify/functions/tests/_test-backfill-pick.mjs",
     "test:backtest": "node netlify/functions/tests/_test-backtest.mjs",
+    "test:stock-win-rate": "node netlify/functions/tests/_test-stock-win-rate.mjs",
     "test:backtest-history": "node netlify/functions/tests/_test-backtest-history.mjs",
     "test:integration": "node netlify/functions/tests/_test-integration-scan.mjs",
     "test:integration-backfill": "node netlify/functions/tests/_test-integration-backfill.mjs",
@@ -37,7 +38,7 @@
     "test:key-sequence": "node src/utils/_test-keySequence.js",
     "test:config": "node src/utils/_test-config.js",
     "test:data-source-stats": "node netlify/functions/tests/_test-data-source-stats.mjs",
-    "test": "npm run test:fetch && npm run test:factors && npm run test:history && npm run test:screen && npm run test:institutional && npm run test:storage && npm run test:volume-archive && npm run test:trading-day && npm run test:trading-calendar && npm run test:trading-calendar-cache && npm run test:history-index && npm run test:taiex && npm run test:finmind && npm run test:day-trade-eligibility && npm run test:backfill-pick && npm run test:backtest && npm run test:backtest-history && npm run test:integration && npm run test:integration-backfill && npm run test:integration-latest && npm run test:schema && npm run test:edge-cases && npm run test:filter-watchlist && npm run test:format && npm run test:key-sequence && npm run test:config && npm run test:data-source-stats",
+    "test": "npm run test:fetch && npm run test:factors && npm run test:history && npm run test:screen && npm run test:institutional && npm run test:storage && npm run test:volume-archive && npm run test:trading-day && npm run test:trading-calendar && npm run test:trading-calendar-cache && npm run test:history-index && npm run test:taiex && npm run test:finmind && npm run test:day-trade-eligibility && npm run test:backfill-pick && npm run test:backtest && npm run test:stock-win-rate && npm run test:backtest-history && npm run test:integration && npm run test:integration-backfill && npm run test:integration-latest && npm run test:schema && npm run test:edge-cases && npm run test:filter-watchlist && npm run test:format && npm run test:key-sequence && npm run test:config && npm run test:data-source-stats",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
     "test:visual:ui": "playwright test --ui"

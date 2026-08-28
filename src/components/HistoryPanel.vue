@@ -200,15 +200,27 @@ const netReturnColorClass = (value) => {
             <button
               type="button"
               class="rounded-sm border border-hairline px-2 py-1 text-[0.7rem]"
-              :class="stockRankStrategy === 'base' ? 'bg-panel text-paper' : 'text-mute'"
+              :class="stockRankStrategy === 'base' ? 'bg-panel text-surge' : 'text-mute'"
               @click="stockRankStrategy = 'base'; loadStockWinRates()"
-            >基準策略</button>
+            >📈 多方基準</button>
             <button
               type="button"
               class="rounded-sm border border-hairline px-2 py-1 text-[0.7rem]"
               :class="stockRankStrategy === 'adv' ? 'bg-panel text-surge' : 'text-mute'"
               @click="stockRankStrategy = 'adv'; loadStockWinRates()"
-            >★ 高級策略</button>
+            >📈 ★多方高級</button>
+            <button
+              type="button"
+              class="rounded-sm border border-hairline px-2 py-1 text-[0.7rem]"
+              :class="stockRankStrategy === 'shortBase' ? 'bg-panel text-ebb' : 'text-mute'"
+              @click="stockRankStrategy = 'shortBase'; loadStockWinRates()"
+            >📉 空方基準</button>
+            <button
+              type="button"
+              class="rounded-sm border border-hairline px-2 py-1 text-[0.7rem]"
+              :class="stockRankStrategy === 'shortAdv' ? 'bg-panel text-ebb' : 'text-mute'"
+              @click="stockRankStrategy = 'shortAdv'; loadStockWinRates()"
+            >📉 ★空方高級</button>
             <button type="button" class="rounded-sm border border-hairline px-2 py-1 text-[0.7rem] text-mute" @click="loadStockWinRates">
               {{ stockRankResult ? '重新查詢' : '查詢近 60 個交易日' }}
             </button>

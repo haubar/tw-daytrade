@@ -60,16 +60,22 @@ export function toPercentileRanks(values) {
   if (n === 0) return [];
   if (n === 1) return [50];
 
-  const indexed = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
-  const ranks = new Array(n);
+  // 非有限值不應讓 sort comparator 回傳 NaN，否則可能污染整個候選池的排序。
+  // 這些值採中性 50，有效值則只在有效樣本內計算百分位。
+  const indexed = values
+    .map((v, i) => ({ v, i }))
+    .filter(({ v }) => Number.isFinite(v))
+    .sort((a, b) => a.v - b.v);
+  const ranks = new Array(n).fill(50);
+  if (indexed.length <= 1) return ranks;
   let start = 0;
 
-  while (start < n) {
+  while (start < indexed.length) {
     let end = start;
-    while (end + 1 < n && indexed[end + 1].v === indexed[start].v) end++;
+    while (end + 1 < indexed.length && indexed[end + 1].v === indexed[start].v) end++;
 
     const averagePosition = (start + end) / 2;
-    const percentile = (averagePosition / (n - 1)) * 100;
+    const percentile = (averagePosition / (indexed.length - 1)) * 100;
     for (let pos = start; pos <= end; pos++) {
       ranks[indexed[pos].i] = percentile;
     }
@@ -85,16 +91,24 @@ export function computeCompositeScores(
 ) {
   if (candidates.length === 0) return [];
 
+  const resolvedWeights = {
+    volumeRatio: 0.3,
+    gapPercent: 0.2,
+    relativeStrength: 0.2,
+    institutionalRatio: 0.3,
+    ...weights,
+  };
+
   const volumeRatioRanks = toPercentileRanks(candidates.map((c) => c.volumeRatio));
   const gapPercentRanks = toPercentileRanks(candidates.map((c) => c.gapPercent));
   const relativeStrengthRanks = toPercentileRanks(candidates.map((c) => c.relativeStrength));
   const institutionalRanks = toPercentileRanks(candidates.map((c) => c.institutionalRatio));
 
   const scored = candidates.map((c, i) => {
-    const volumeContribution = volumeRatioRanks[i] * weights.volumeRatio;
-    const gapContribution = gapPercentRanks[i] * weights.gapPercent;
-    const relativeStrengthContribution = relativeStrengthRanks[i] * weights.relativeStrength;
-    const institutionalContribution = institutionalRanks[i] * weights.institutionalRatio;
+    const volumeContribution = volumeRatioRanks[i] * resolvedWeights.volumeRatio;
+    const gapContribution = gapPercentRanks[i] * resolvedWeights.gapPercent;
+    const relativeStrengthContribution = relativeStrengthRanks[i] * resolvedWeights.relativeStrength;
+    const institutionalContribution = institutionalRanks[i] * resolvedWeights.institutionalRatio;
 
     return {
       ...c,

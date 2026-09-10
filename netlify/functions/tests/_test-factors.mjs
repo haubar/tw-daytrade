@@ -106,6 +106,8 @@ if (proxy > 5) {
 assertDeepClose(toPercentileRanks([10, 20, 30]), [0, 50, 100], '百分位排名：三個遞增值應為 0/50/100');
 assertDeepClose(toPercentileRanks([30, 10, 20]), [100, 0, 50], '百分位排名：順序打亂也要對應正確的原始 index');
 assertDeepClose(toPercentileRanks([5]), [50], '百分位排名：只有一筆資料應回傳中性 50');
+assertDeepClose(toPercentileRanks([10, NaN, 30]), [0, 50, 100], '百分位排名：NaN 應採中性分數，不應污染其他有效值的排序');
+assertDeepClose(toPercentileRanks([NaN, Infinity]), [50, 50], '百分位排名：全部都是非有限值時應全部回傳中性 50');
 
 // ---- computeCompositeScores ----
 const candidates = [
@@ -135,6 +137,15 @@ if (allContributionsSumCorrectly) {
 } else {
   failed++;
   console.log('❌ 因子貢獻度加總與總分對不起來:', scored);
+}
+
+const partialWeights = computeCompositeScores(candidates, { volumeRatio: 1 });
+if (partialWeights.every((item) => Number.isFinite(item.score))) {
+  passed++;
+  console.log('✅ 部分權重設定缺漏時應補回預設權重，不產生 NaN 分數');
+} else {
+  failed++;
+  console.log('❌ 部分權重設定造成非有限分數:', partialWeights);
 }
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);

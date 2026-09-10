@@ -1,7 +1,7 @@
 // netlify/functions/tests/_test-trading-calendar-cache.mjs
 // 執行方式：node netlify/functions/tests/_test-trading-calendar-cache.mjs
 
-import { saveExchangeHolidays, getExchangeHolidays, getExchangeHolidaysForYears } from '../lib/trading-calendar-cache.mjs';
+import { saveExchangeHolidays, getExchangeHolidays, getExchangeHolidaysForYears, getRecentExchangeHolidays } from '../lib/trading-calendar-cache.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -72,6 +72,17 @@ assertEqual([...mergedPartial], ['2026-01-01'], '其中一個年度沒存過時�
 const store7 = createFakeStore();
 const mergedEmpty = await getExchangeHolidaysForYears([2098, 2099], store7);
 assertEqual([...mergedEmpty], [], '全部年度都沒存過時應該回傳空集合，不拋出例外');
+
+// ---- getRecentExchangeHolidays：共用目前／前一年度的 fallback 邏輯 ----
+const store8 = createFakeStore();
+await saveExchangeHolidays(2026, new Set(['2026-01-01']), store8);
+await saveExchangeHolidays(2025, new Set(['2025-12-31']), store8);
+const recent = await getRecentExchangeHolidays(new Date(2026, 6, 7), store8);
+assertEqual([...recent].sort(), ['2025-12-31', '2026-01-01'], '應合併目前年度與前一年度的動態休市日');
+
+const failingStore = { async get() { throw new Error('Blobs unavailable'); } };
+const fallback = await getRecentExchangeHolidays(new Date(2026, 6, 7), failingStore);
+assertEqual([...fallback], [], '動態日曆讀取失敗時應回傳空集合，不讓統計入口整個失敗');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

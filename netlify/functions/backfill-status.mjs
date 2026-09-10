@@ -6,7 +6,7 @@
 import { getPastTradingDayCandidates, formatIsoDate } from './lib/trading-day.mjs';
 import { getBacktestIndex } from './lib/backtest-storage.mjs';
 import { buildBackfillStatusItems } from './lib/history-index.mjs';
-import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
+import { getRecentExchangeHolidays } from './lib/trading-calendar-cache.mjs';
 
 const DEFAULT_DAYS = 10;
 const MAX_DAYS = 30; // 上限，避免有人手動改網址參數要求過多天數，拖慢回應
@@ -17,14 +17,7 @@ export default async (req) => {
     const requestedDays = Number(url.searchParams.get('days'));
     const days = Number.isInteger(requestedDays) && requestedDays >= 1 && requestedDays <= MAX_DAYS ? requestedDays : DEFAULT_DAYS;
 
-    let dynamicHolidays = new Set();
-    try {
-      const now = new Date();
-      dynamicHolidays = await getExchangeHolidaysForYears([now.getFullYear(), now.getFullYear() - 1]);
-    } catch {
-      // 動態日曆讀取失敗時，getPastTradingDayCandidates 仍會使用靜態假日表。
-    }
-
+    const dynamicHolidays = await getRecentExchangeHolidays();
     const tradingDayDates = getPastTradingDayCandidates(new Date(), days, dynamicHolidays).map(formatIsoDate);
     const backtestDates = await getBacktestIndex();
     const items = buildBackfillStatusItems(tradingDayDates, backtestDates);

@@ -62,3 +62,20 @@ export async function getExchangeHolidaysForYears(years, store = defaultStore())
   }
   return merged;
 }
+
+/**
+ * 讀取目前年度與前一年度的動態休市日。
+ * 這是回填狀態／資料源統計等「只需要往回看一小段時間」的共用入口；
+ * 快取尚未同步或 Blobs 暫時不可用時，統一退回空集合，讓呼叫端繼續使用靜態假日表。
+ * @param {Date} [date]
+ * @param {Object} [store] 可注入的假 store（測試用）
+ * @returns {Promise<Set<string>>}
+ */
+export async function getRecentExchangeHolidays(date = new Date(), store) {
+  try {
+    const year = date.getFullYear();
+    return await getExchangeHolidaysForYears([year, year - 1], store ?? defaultStore());
+  } catch {
+    return new Set();
+  }
+}

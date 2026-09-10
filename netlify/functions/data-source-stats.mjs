@@ -14,7 +14,7 @@
 import { getPastTradingDayCandidates, formatIsoDate } from './lib/trading-day.mjs';
 import { getScanByDate } from './lib/storage.mjs';
 import { summarizeDataSourceHistory, buildDailyBreakdown } from './lib/data-source-stats.mjs';
-import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
+import { getRecentExchangeHolidays } from './lib/trading-calendar-cache.mjs';
 
 const DEFAULT_DAYS = 20;
 const MAX_DAYS = 60; // 上限，避免有人手動改網址參數要求過多天數，一次觸發太多 Blobs 讀取
@@ -28,14 +28,7 @@ export default async (req) => {
     // 包含「今天」一起算：跟 backfill-status.mjs 不同（那邊只看過去、不含今天，因為
     // 今天的回測還沒有機會執行），這裡是想看「資料源本身」的成功率，今天如果已經
     // 執行過 scan.mjs，也應該算進統計裡。
-    let dynamicHolidays = new Set();
-    try {
-      const now = new Date();
-      dynamicHolidays = await getExchangeHolidaysForYears([now.getFullYear(), now.getFullYear() - 1]);
-    } catch {
-      // 動態日曆讀取失敗時，getPastTradingDayCandidates 仍會使用靜態假日表。
-    }
-
+    const dynamicHolidays = await getRecentExchangeHolidays();
     const candidateDates = [
       formatIsoDate(new Date()),
       ...getPastTradingDayCandidates(new Date(), days, dynamicHolidays).map(formatIsoDate),

@@ -285,7 +285,7 @@ export default async (req) => {
         tpex: tpexResult.status === 'fulfilled' ? `ok (${tpexResult.value.length} 檔)` : `失敗: ${tpexResult.reason.message}`,
         institutional: institutionalNetBuy.size > 0
           ? `ok (${institutionalNetBuy.size} 檔)${institutionalWarning ? ` ⚠ ${institutionalWarning}` : ''}`
-          : `失敗: ${institutionalWarning}`,
+          : `失敗: ${institutionalWarning ?? '法人資料回傳空結果'}`,
         historyArchive: historyResult.status === 'fulfilled'
           ? `ok（累積 ${datesUsed.length}/${DEFAULT_HISTORY_WINDOW_DAYS} 天，${datesUsed.length < DEFAULT_HISTORY_WINDOW_DAYS ? '尚未暖機完成，量能異常因子會偏向中性' : '天數足夠'}）${archiveWarning ? ` ⚠ ${archiveWarning}` : ''}`
           : `失敗（本次量能異常因子將全部視為中性）: ${historyResult.reason?.message ?? '未知錯誤'}`,

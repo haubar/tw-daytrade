@@ -105,7 +105,7 @@ if (proxy > 5) {
 // ---- toPercentileRanks ----
 assertDeepClose(toPercentileRanks([10, 20, 30]), [0, 50, 100], '百分位排名：三個遞增值應為 0/50/100');
 assertDeepClose(toPercentileRanks([30, 10, 20]), [100, 0, 50], '百分位排名：順序打亂也要對應正確的原始 index');
-assertDeepClose(toPercentileRanks([5]), [100], '百分位排名：只有一筆資料應回傳 100');
+assertDeepClose(toPercentileRanks([5]), [50], '百分位排名：只有一筆資料應回傳中性 50');
 
 // ---- computeCompositeScores ----
 const candidates = [

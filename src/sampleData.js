@@ -4,8 +4,6 @@
 // 只是內容是編造的（雖然股票代號/名稱是真實存在的台股，但數字是編的，不代表真實行情）。
 // 給本機開發、還沒部署到 Netlify 或還沒接上真實資料源時，先看到完整 UI 長什麼樣子用。
 
-export const isSampleData = true;
-
 export const sampleScanResult = {
   generatedAt: '2026-07-07T06:10:00.000Z',
   elapsedMs: 8421,

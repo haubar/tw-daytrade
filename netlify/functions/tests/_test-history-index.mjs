@@ -71,14 +71,35 @@ assertEqual(
     wonCount: 1,
     netReturnPercent: 1.23,
     winRatePercent: 62.5,
-    adv: { executedCount: 3, selectedCount: 10, wonCount: 3, netReturnPercent: 2.4, winRatePercent: 100 },
+    adv: {
+      executedCount: 3,
+      selectedCount: 10,
+      wonCount: 3,
+      netReturnPercent: 2.4,
+      winRatePercent: 100,
+      triggerRatePercent: 30,
+      tradeReturns: [2, 3.1, 2.1],
+      ambiguousTradeCount: 0,
+      backtestQuality: null,
+    },
     long: {
       executedCount: 8,
       selectedCount: 10,
       wonCount: 1,
       netReturnPercent: 1.23,
       winRatePercent: 62.5,
-      adv: { executedCount: 3, selectedCount: 10, wonCount: 3, netReturnPercent: 2.4, winRatePercent: 100 },
+      tradeReturns: [1.5, -0.5],
+      adv: {
+        executedCount: 3,
+        selectedCount: 10,
+        wonCount: 3,
+        netReturnPercent: 2.4,
+        winRatePercent: 100,
+        triggerRatePercent: 30,
+        tradeReturns: [2, 3.1, 2.1],
+        ambiguousTradeCount: 0,
+        backtestQuality: null,
+      },
     },
     short: null,
   },
@@ -95,7 +116,15 @@ assertEqual(
     netReturnPercent: null,
     winRatePercent: null,
     adv: null,
-    long: { executedCount: 0, selectedCount: 0, wonCount: 0, netReturnPercent: null, winRatePercent: null, adv: null },
+    long: {
+      executedCount: 0,
+      selectedCount: 0,
+      wonCount: 0,
+      netReturnPercent: null,
+      winRatePercent: null,
+      tradeReturns: [],
+      adv: null,
+    },
     short: null,
   },
   '缺少的欄位應該有合理的預設值，不是 undefined；沒有 adv／short 資料時應該是 null'
@@ -175,7 +204,22 @@ assertEqual(rolling.adv.window2.pooledWinRatePercent, 100, '高級策略併總�
 assertEqual(rolling.adv.window2.executionCoveragePercent, (2 / 20) * 100, '高級策略進場覆蓋率很低（20 檔裡只有 2 檔真的進場），這正是勝率容易失真的地方');
 
 assertEqual(rolling.base.window20.tradingDays, 2, 'window 大於實際可用天數時，應該用全部可用天數，不會因為不足 20 天就出錯');
-assertEqual(computeRollingStats([]).base.window5, { tradingDays: 0, daysWithTrades: 0, executionCoveragePercent: null, pooledWinRatePercent: null, compoundNetReturnPercent: null }, '完全沒有資料時，每個欄位都應該是安全的 0 或 null，不拋出例外');
+assertEqual(
+  computeRollingStats([]).base.window5,
+  {
+    tradingDays: 0,
+    daysWithTrades: 0,
+    executionCoveragePercent: null,
+    pooledWinRatePercent: null,
+    compoundNetReturnPercent: null,
+    maxDrawdownPercent: null,
+    sharpeRatioAnnualized: null,
+    expectancyPercent: null,
+    profitFactor: 0,
+    sampleReady: false,
+  },
+  '完全沒有資料時，每個欄位都應該是安全的 0 或 null，不拋出例外'
+);
 
 // ---- computeRollingStats：結構化的 long/short（補上原本完全沒有覆蓋到的空方路徑）----
 assertEqual(

@@ -6,6 +6,7 @@
 
 export const sampleScanResult = {
   generatedAt: '2026-07-07T06:10:00.000Z',
+  institutionalDataCoverageVersion: 2,
   elapsedMs: 8421,
   dataSourceStatus: {
     twse: 'ok (1023 檔)',

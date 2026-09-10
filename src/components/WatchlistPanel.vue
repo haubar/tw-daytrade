@@ -19,6 +19,7 @@ defineProps({
   items: { type: Array, required: true },
   tone: { type: String, required: true, validator: (v) => v === 'surge' || v === 'ebb' },
   emptyMessage: { type: String, default: '目前沒有符合條件的股票。' },
+  institutionalDataCoverageVersion: { type: Number, default: 0 },
 });
 
 function profitReference(price) {
@@ -63,7 +64,7 @@ function profitReference(price) {
           <span class="flex flex-wrap items-center gap-1">
             <Badge :label="item.market === 'TWSE' ? '上市' : '上櫃'" />
             <Badge
-              v-if="item.institutionalDataMissing"
+              v-if="item.institutionalDataMissing && institutionalDataCoverageVersion >= 2"
               label="法人資料暫缺"
               variant="notice"
               title="這檔股票當日沒有三大法人買賣超資料，法人買賣超因子以中性值（0分）計入總分，總分僅反映其餘三個因子"

@@ -287,6 +287,9 @@ export default async (req) => {
 
     const payload = {
       generatedAt: new Date().toISOString(),
+      // 前端用這個版本欄位區分新邏輯產生的結果與部署前已存在的 Blobs 快取。
+      // 舊快取的 institutionalDataMissing 判斷範圍不可靠，不應繼續顯示提示。
+      institutionalDataCoverageVersion: 2,
       elapsedMs: Date.now() - startedAt,
       dataSourceStatus: {
         twse: twseResult.status === 'fulfilled' ? `ok (${twseResult.value.length} 檔)` : `失敗: ${twseResult.reason.message}`,

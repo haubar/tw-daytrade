@@ -202,12 +202,14 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
             title="多方觀察榜"
             :items="filteredLongWatchlist"
             tone="surge"
+            :institutional-data-coverage-version="result.institutionalDataCoverageVersion"
             :empty-message="filterActive ? '沒有符合篩選條件的股票，試著放寬篩選範圍。' : '今日沒有符合多方條件的股票。'"
           />
           <WatchlistPanel
             title="空方觀察榜"
             :items="filteredShortWatchlist"
             tone="ebb"
+            :institutional-data-coverage-version="result.institutionalDataCoverageVersion"
             :empty-message="filterActive ? '沒有符合篩選條件的股票，試著放寬篩選範圍。' : '今日沒有符合空方條件的股票。'"
           />
         </div>

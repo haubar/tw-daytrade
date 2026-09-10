@@ -26,6 +26,16 @@ export function formatIsoDate(date) {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * 把時間轉成台灣時區的 YYYY-MM-DD。
+ * Netlify Functions 預設使用 UTC；直接呼叫 toISOString().slice(0, 10)
+ * 在台灣凌晨 00:00~07:59 會得到前一天，手動觸發掃描時可能因此把資料存錯日期。
+ */
+export function formatTaiwanIsoDate(date) {
+  const taiwanDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  return taiwanDate.toISOString().slice(0, 10);
+}
+
 // 以 TWSE 官方公告的 2026 年交易日曆為基準，先把已知休市日列出，當作 dynamicHolidays
 // （見 isNonTradingDay）還沒同步到時的備援。
 //

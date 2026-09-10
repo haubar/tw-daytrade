@@ -32,7 +32,7 @@ import { screenWatchlists, getTpexCandidateCodes } from './lib/screen.mjs';
 import { getScanByDate, saveLatestScan } from './lib/storage.mjs';
 import { evaluateOpenToCloseLong, evaluateOpenToCloseShort } from './lib/backtest.mjs';
 import { saveBacktestResult } from './lib/backtest-storage.mjs';
-import { isNonTradingDay, isMarketDataReady } from './lib/trading-day.mjs';
+import { isNonTradingDay, isMarketDataReady, formatTaiwanIsoDate } from './lib/trading-day.mjs';
 import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
 
 const TWSE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
@@ -69,7 +69,7 @@ async function fetchTodayTpexQuotes() {
 
 export default async (req) => {
   const startedAt = Date.now();
-  const todayDateStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+  const todayDateStr = formatTaiwanIsoDate(new Date()); // 台灣時間的 'YYYY-MM-DD'
   try {
     // 三個資料來源彼此獨立，全部平行發出。歷史資料現在是讀 Netlify Blobs 裡累積的紀錄
     // （見 volume-archive.mjs），不再現場跟 TWSE 要好幾天份資料——這是部署後實測發現的

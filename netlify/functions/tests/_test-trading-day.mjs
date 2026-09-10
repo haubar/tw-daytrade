@@ -1,7 +1,7 @@
 // netlify/functions/_test-trading-day.mjs
 // 執行方式：npm run test:trading-day
 
-import { isWeekend, formatDateParam, getPastTradingDayCandidates, isMarketDataReady, isExchangeHoliday, isNonTradingDay, getNextTradingDay, formatIsoDate } from '../lib/trading-day.mjs';
+import { isWeekend, formatDateParam, getPastTradingDayCandidates, isMarketDataReady, isExchangeHoliday, isNonTradingDay, getNextTradingDay, formatIsoDate, formatTaiwanIsoDate } from '../lib/trading-day.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -27,6 +27,19 @@ assertEqual(isWeekend(new Date(2026, 6, 7)), false, 'isWeekend：2026-07-07 是�
 
 // ---- formatDateParam ----
 assertEqual(formatDateParam(new Date(2026, 6, 7)), '20260707', 'formatDateParam：2026-07-07 應格式化為 20260707');
+
+// ---- formatTaiwanIsoDate ----
+// Netlify Functions 使用 UTC；台灣凌晨仍可能是 UTC 前一天，日期必須以台灣時區為準。
+assertEqual(
+  formatTaiwanIsoDate(new Date(Date.UTC(2026, 6, 6, 23, 59))),
+  '2026-07-07',
+  'formatTaiwanIsoDate：UTC 23:59 應對應台灣隔日 07-07'
+);
+assertEqual(
+  formatTaiwanIsoDate(new Date(Date.UTC(2026, 6, 7, 0, 30))),
+  '2026-07-07',
+  'formatTaiwanIsoDate：台灣凌晨仍應使用台灣當日日期，不可退回 UTC 前一天'
+);
 
 // ---- getPastTradingDayCandidates ----
 // 2026-07-07 是星期二，往回推應該跳過週末（07-05 週日、07-04 週六）

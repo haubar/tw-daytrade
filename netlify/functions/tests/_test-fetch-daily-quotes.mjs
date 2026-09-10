@@ -69,6 +69,11 @@ const twseZeroVolume = {
 const normalizedZero = normalizeTwseRow(twseZeroVolume);
 assertEqual(isTradableRow(normalizedZero), false, 'TWSE 當日無交易標的應被 isTradableRow 過濾掉');
 assertEqual(isTradableRow(normalizedTwseSample()), true, 'TWSE 正常有交易標的應通過 isTradableRow');
+assertEqual(
+  isTradableRow({ code: '', volume: 1000, close: 10 }),
+  false,
+  '缺少股票代碼的行情列應被過濾，避免進入候選池'
+);
 
 function normalizedTwseSample() {
   return normalizeTwseRow(twseSample);
@@ -115,6 +120,32 @@ assertEqual(
     change: 5,
   },
   'TPEx 欄位對應（候選欄位命中）正規化正確'
+);
+
+const tpexSampleWithChineseFields = {
+  '證券代號': ' 6488 ',
+  '證券名稱': '環球晶',
+  '開盤價': '450.00',
+  '最高價': '460.00',
+  '最低價': '448.00',
+  '收盤價': '458.00',
+  '成交股數': '1200000',
+  '漲跌價差': '5.00',
+};
+assertEqual(
+  normalizeTpexRow(tpexSampleWithChineseFields),
+  {
+    market: 'TPEx',
+    code: '6488',
+    name: '環球晶',
+    open: 450,
+    high: 460,
+    low: 448,
+    close: 458,
+    volume: 1200000,
+    change: 5,
+  },
+  'TPEx 中文欄位與代碼空白也應正確正規化'
 );
 
 // ---- 測試 5：TPEx 欄位對不上時，應丟出清楚的錯誤訊息，而不是靜默算出錯誤數字 ----

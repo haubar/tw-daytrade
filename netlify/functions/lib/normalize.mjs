@@ -54,14 +54,14 @@ export function normalizeTwseRow(row) {
  * 方便快速修正，而不是默默算出錯誤數字。
  */
 const TPEX_FIELD_CANDIDATES = {
-  code: ['SecuritiesCompanyCode', 'Code', 'CompanyCode', 'StockCode'],
-  name: ['CompanyName', 'Name'],
-  open: ['Open', 'OpeningPrice'],
-  high: ['High', 'HighestPrice'],
-  low: ['Low', 'LowestPrice'],
-  close: ['Close', 'ClosingPrice'],
-  volume: ['TradingShares', 'TradeVolume', 'Volume'],
-  change: ['Change', 'Diff'],
+  code: ['SecuritiesCompanyCode', 'Code', 'CompanyCode', 'StockCode', '證券代號'],
+  name: ['CompanyName', 'Name', '證券名稱'],
+  open: ['Open', 'OpeningPrice', '開盤價'],
+  high: ['High', 'HighestPrice', '最高價'],
+  low: ['Low', 'LowestPrice', '最低價'],
+  close: ['Close', 'ClosingPrice', '收盤價'],
+  volume: ['TradingShares', 'TradeVolume', 'Volume', '成交股數'],
+  change: ['Change', 'Diff', '漲跌', '漲跌價差'],
 };
 
 function pickField(row, candidates) {
@@ -99,8 +99,8 @@ export function normalizeTpexRow(row) {
 
   return {
     market: 'TPEx',
-    code,
-    name,
+    code: String(code).trim(),
+    name: String(name).trim(),
     open: toNumber(open),
     high: toNumber(high),
     low: toNumber(low),
@@ -115,7 +115,7 @@ export function normalizeTpexRow(row) {
  * 這些多半是當日暫停交易、剛下市，或 ETF 尚未開始交易的標的，不適合拿來算因子。
  */
 export function isTradableRow(normalizedRow) {
-  return normalizedRow.volume > 0 && normalizedRow.close > 0;
+  return Boolean(normalizedRow?.code) && normalizedRow.volume > 0 && normalizedRow.close > 0;
 }
 
 /**

@@ -7,16 +7,18 @@
 // 例如回測當天 executedCount 是 0 時，grossReturnPercent／netReturnPercent／winRatePercent
 // 都會是 null）。這種情況呼叫 .toFixed() 會直接拋出例外把整個畫面弄壞，所以要先擋掉。
 export function formatPercent(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  if (!Number.isFinite(value)) return '—';
   const sign = value > 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 }
 
 export function formatPrice(value) {
+  if (!Number.isFinite(value)) return '—';
   return value.toFixed(value >= 1000 ? 0 : 2);
 }
 
 export function formatVolume(shares) {
+  if (!Number.isFinite(shares)) return '—';
   // 台股慣例用「張」（1張 = 1,000股）表示成交量，比原始股數直覺
   const lots = Math.round(shares / 1000);
   return `${lots.toLocaleString('zh-TW')} 張`;

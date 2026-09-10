@@ -30,14 +30,18 @@ assertEqual(formatPercent(0), '0.00%', '0 不應該有 + 號（既不是正也�
 assertEqual(formatPercent(null), '—', 'null（今天完全沒有成交）應該顯示為 —，不是拋出例外或誤顯示成0%');
 assertEqual(formatPercent(undefined), '—', 'undefined 應該顯示為 —，不拋出例外');
 assertEqual(formatPercent(NaN), '—', 'NaN 應該顯示為 —，不拋出例外');
+assertEqual(formatPercent(Infinity), '—', 'Infinity 應該顯示為 —，不拋出例外');
 
 // ---- formatPrice ----
 assertEqual(formatPrice(1234.5), '1235', '千元以上股票應該無條件捨去到整數（實際上是四捨五入，這裡驗證千元價位不顯示小數）');
 assertEqual(formatPrice(45.678), '45.68', '千元以下應該顯示到小數點後2位');
+assertEqual(formatPrice(null), '—', 'null 價格應該顯示為 —，不拋出例外');
+assertEqual(formatPrice(NaN), '—', 'NaN 價格應該顯示為 —，不拋出例外');
 
 // ---- formatVolume ----
 assertEqual(formatVolume(1000000), '1,000 張', '100萬股應該顯示為1,000張，並加上千分位');
 assertEqual(formatVolume(500), '1 張', '不滿一張的成交股數應該四捨五入');
+assertEqual(formatVolume(undefined), '—', 'undefined 成交量應該顯示為 —，不拋出例外');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

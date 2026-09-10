@@ -43,7 +43,7 @@ export const sampleScanResult = {
     },
     {
       code: '5347', name: '世界', market: 'TPEx', close: 158.5, changePercent: 5.15, volume: 15000000,
-      volumeRatio: 2.6, gapPercent: 3.0, dayTradeEligible: null, relativeStrengthWindowDays: 5, relativeStrength: 4.3, institutionalRatio: 0, institutionalDataMissing: true,
+      volumeRatio: 2.6, gapPercent: 3.0, dayTradeEligible: null, relativeStrengthWindowDays: 5, relativeStrength: 4.3, institutionalRatio: 0, institutionalDataMissing: false,
       volumeContribution: 16.7, gapContribution: 12.6, relativeStrengthContribution: 14.0, institutionalContribution: 6.0, score: 49.3,
     },
     {
@@ -60,7 +60,7 @@ export const sampleScanResult = {
     },
     {
       code: '8069', name: '元太', market: 'TPEx', close: 186.0, changePercent: -6.98, volume: 18000000,
-      volumeRatio: 3.5, gapPercent: -5.8, dayTradeEligible: null, relativeStrengthWindowDays: 5, relativeStrength: -6.7, institutionalRatio: 0, institutionalDataMissing: true,
+      volumeRatio: 3.5, gapPercent: -5.8, dayTradeEligible: null, relativeStrengthWindowDays: 5, relativeStrength: -6.7, institutionalRatio: 0, institutionalDataMissing: false,
       volumeContribution: 22.4, gapContribution: 16.9, relativeStrengthContribution: 17.6, institutionalContribution: 6.0, score: 62.9,
     },
     {
@@ -75,7 +75,7 @@ export const sampleScanResult = {
     },
     {
       code: '3596', name: '智易', market: 'TPEx', close: 45.6, changePercent: -3.1, volume: 5300000,
-      volumeRatio: 1.9, gapPercent: -2.1, dayTradeEligible: null, relativeStrengthWindowDays: 5, relativeStrength: -2.4, institutionalRatio: 0, institutionalDataMissing: true,
+      volumeRatio: 1.9, gapPercent: -2.1, dayTradeEligible: null, relativeStrengthWindowDays: 5, relativeStrength: -2.4, institutionalRatio: 0, institutionalDataMissing: false,
       volumeContribution: 11.3, gapContribution: 8.1, relativeStrengthContribution: 8.9, institutionalContribution: 6.0, score: 34.3,
     },
   ],

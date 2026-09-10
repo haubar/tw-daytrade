@@ -25,8 +25,10 @@ import {
  * @param {number[]} [marketChangeHistory] 過去幾天的大盤漲跌幅，天數順序需與 changeHistory 對應的股票資料一致（都是新到舊）
  * @param {Set<string>} [dayTradeEligibleCodes] 今天可以現股當沖的上市股票代碼集合（見 day-trade-eligibility.mjs）。
  *   只涵蓋上市，上櫃股票目前沒有對應的公開資料源，一律回傳 null（未知，不是不合格）
+ * @param {Set<string>|null} [institutionalDataExpectedCodes] 本次確實有查詢法人資料的股票代碼集合。
+ *   未傳入時維持舊版行為：Map 沒有該代碼就標記為缺資料；傳入後只有「查詢過但沒有結果」才標記。
  */
-function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory = new Map(), marketChangeHistory = [], dayTradeEligibleCodes = null) {
+function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory = new Map(), marketChangeHistory = [], dayTradeEligibleCodes = null, institutionalDataExpectedCodes = null) {
   const prevClose = quote.close - quote.change;
   const changePercent = computeChangePercent(quote.change, prevClose);
   const pastVolumes = volumeHistory.get(quote.code) || [];
@@ -37,7 +39,9 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
   // 但「中性 0 分」跟「法人真的買賣超剛好等於 0」在畫面上看起來會一模一樣，使用者無從分辨這檔股票的
   // 總分是「四個因子都真實參與計算」還是「少了 30% 權重、其實只用三個因子在比」。用 institutionalDataMissing
   // 明確標記資料缺席（而不是用 netBuyShares === 0 反推，那樣會誤判真的買賣超為零的股票），交給前端顯示提示。
-  const institutionalDataMissing = !institutionalNetBuy.has(quote.code);
+  const institutionalDataMissing = institutionalDataExpectedCodes === null
+    ? !institutionalNetBuy.has(quote.code)
+    : institutionalDataExpectedCodes.has(quote.code) && !institutionalNetBuy.has(quote.code);
   const netBuyShares = institutionalNetBuy.get(quote.code) ?? 0;
 
   // 相對強弱因子：優先用「多日」版本（今天 + 過去幾天的單日相對強弱勢取平均，見 factors.mjs 的
@@ -101,6 +105,8 @@ function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangeP
  *   getRecentMarketChangeHistory），天數需與 changeHistory 的資料對應同一批交易日
  * @param {Set<string>} [options.dayTradeEligibleCodes] 今天可以現股當沖的上市股票代碼集合
  *   （見 day-trade-eligibility.mjs）。不提供時所有候選股的 dayTradeEligible 都會是 null（未知）
+ * @param {Set<string>} [options.institutionalDataExpectedCodes] 本次確實有查詢法人資料的股票代碼集合；
+ *   未被查詢的股票不顯示「法人資料暫缺」，只有查詢後沒有結果才顯示。
  * @returns {{marketChangePercent: number, longWatchlist: Array, shortWatchlist: Array, totalCandidates: number, excludedNoHistory: number}}
  */
 export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy = new Map(), options = {}) {
@@ -111,12 +117,13 @@ export function screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy
     changeHistory = new Map(),
     marketChangeHistory = [],
     dayTradeEligibleCodes = null,
+    institutionalDataExpectedCodes = null,
   } = options;
 
   const marketChangePercent = marketChangePercentOverride ?? computeMarketChangeProxy(todayQuotes);
 
   const allCandidates = todayQuotes.map((q) =>
-    buildCandidate(q, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory, marketChangeHistory, dayTradeEligibleCodes)
+    buildCandidate(q, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory, marketChangeHistory, dayTradeEligibleCodes, institutionalDataExpectedCodes)
   );
 
   // 沒有歷史成交量資料的股票（例如新股），量能異常因子沒有意義，排除在評分之外。

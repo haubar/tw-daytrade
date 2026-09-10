@@ -88,6 +88,17 @@ check(
   `實際: ${flatCandidate && flatCandidate.institutionalDataMissing}`
 );
 
+const coverageAwareResult = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, {
+  topN: 3,
+  institutionalDataExpectedCodes: new Set(['STRONG', 'WEAK', 'AVERAGE']),
+});
+const coverageAwareFlat = [...coverageAwareResult.longWatchlist, ...coverageAwareResult.shortWatchlist].find((c) => c.code === 'FLAT');
+check(
+  coverageAwareFlat === undefined || coverageAwareFlat.institutionalDataMissing === false,
+  '未被法人資料來源查詢的股票不應誤標成法人資料暫缺',
+  `實際: ${coverageAwareFlat && coverageAwareFlat.institutionalDataMissing}`
+);
+
 // ---- marketChangePercent 覆蓋功能（真實 TAIEX 指數）----
 // 沒有傳 marketChangePercent 時，應該用估計值（前面的測試已經驗證過是個數字）；
 // 有明確傳入時，應該直接採用那個值，不會再去算估計值。

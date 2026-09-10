@@ -214,12 +214,16 @@ export default async (req) => {
     // 篩一篩很容易剩沒幾檔可看，拉大候選池篩選才有意義。
     //
     // 第一輪：用 T86（上市法人資料）跑一次，上櫃股票的法人因子暫時是中性值。
+    const twseInstitutionalExpectedCodes = new Set(
+      todayQuotes.filter((quote) => quote.market === 'TWSE').map((quote) => quote.code)
+    );
     const firstPassResult = screenWatchlists(todayQuotes, volumeHistory, institutionalNetBuy, {
       topN: 100,
       marketChangePercent: realTaiexChangePercent ?? undefined,
       changeHistory,
       marketChangeHistory,
       dayTradeEligibleCodes,
+      institutionalDataExpectedCodes: twseInstitutionalExpectedCodes,
     });
 
     // 第二輪：從第一輪結果裡挑出「進了觀察榜的上櫃股票」，只對這些candidate額外查 FinMind 補強
@@ -249,6 +253,10 @@ export default async (req) => {
             changeHistory,
             marketChangeHistory,
             dayTradeEligibleCodes,
+            institutionalDataExpectedCodes: new Set([
+              ...twseInstitutionalExpectedCodes,
+              ...tpexCandidateCodes,
+            ]),
           });
         }
 

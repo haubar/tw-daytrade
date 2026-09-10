@@ -19,9 +19,9 @@ const MAX_ARCHIVED_DAYS = 15; // 保留最近 15 個交易日，避免 Blobs 裡
 
 // 量能異常因子實際使用的歷史窗口天數。原本是 3 天，但 3 天的均量基準很容易被單一天的
 // 異常量能干擾（例如除權息、法說會等一次性事件造成的單日爆量，會讓接下來兩天都被拉高
-// 均量基準，量能異常因子因此失真）。拉長到 5 天可以稀釋單一天雜訊的影響，同時不用等
-// 太久才能暖機完成（MAX_ARCHIVED_DAYS=15 天保留空間還有餘裕，之後想再拉到 10 天也不用
-// 改這裡以外的地方）。scan.mjs、backfill-history.mjs 都從這裡引用，只有一個地方需要改。
+// 均量基準，量能異常因子因此失真）。目前使用 10 天來稀釋單一天雜訊的影響，
+// MAX_ARCHIVED_DAYS=15 天仍保留少量調整空間。scan.mjs、backfill-history.mjs 都從這裡引用，
+// 只有一個地方需要改。
 export const DEFAULT_HISTORY_WINDOW_DAYS = 10;
 
 function defaultStore() {

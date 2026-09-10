@@ -71,7 +71,7 @@ https://你的站台.netlify.app/.netlify/functions/scan
 
 - [ ] 確認回應是完整的 JSON
 - [ ] 檢查 `dataSourceStatus.historyArchive`：
-  - 如果是第一次執行（或還沒跑過 `backfill-history`），這裡會顯示「失敗」或「累積 0/3 天」——**這是正常的**，代表歷史累積庫還是空的，`longWatchlist`／`shortWatchlist` 這次會是空陣列，不用緊張
+  - 如果是第一次執行（或還沒跑過 `backfill-history`），這裡會顯示「失敗」或「累積 0/10 天」——**這是正常的**，代表歷史累積庫還是空的，`longWatchlist`／`shortWatchlist` 這次會是空陣列，不用緊張
   - 想要立刻有完整資料可以看，回到本清單的**第 3.5 步**先跑一次 `backfill-history`
 - [ ] 檢查 `dataSourceStatus.institutional`：
   - 如果顯示 `ok (數字 檔)` 沒有警告符號 ⚠，代表法人資料抓取正常、日期也對得上

@@ -61,6 +61,10 @@ tw-daytrade-scanner/
     ├── latest.mjs                           # 給前端呼叫：讀取 Blobs 裡最新一筆結果
     ├── backtest-latest.mjs                # 讀取最新一筆基準／歷史回測結果
     ├── fetch-daily-quotes.mjs             # 輔助 function：只抓今日行情（除錯用）
+    ├── history-index.mjs                  # 歷史快照／回測索引與滾動統計
+    ├── backfill-status.mjs                # 回填控制頁：列出缺少回測的交易日
+    ├── data-source-stats.mjs              # 統計各資料源的成功／失敗比例
+    ├── stock-win-rate.mjs                 # 個股歷史勝率排行
     ├── tests/                               # 本地測試腳本（放子資料夾，避免被 Netlify 誤判成要部署的 Function）
     │   └── _test-*.mjs                       # 不連網路，用樣本/假資料驗證邏輯
     └── lib/
@@ -106,7 +110,7 @@ https://你的站台.netlify.app/.netlify/functions/backfill-backtest
 
 現在改成：`scan.mjs` 每次執行時，把「今天」的資料存進 Netlify Blobs 累積庫（`volume-archive.mjs`），下次執行時直接讀 Blobs 裡累積的紀錄當歷史資料，不用再現場跟 TWSE 要好幾天份資料。
 
-**代價**：剛部署（或 Blobs 累積庫是空的）的前幾天，累積天數不夠 5 天，量能異常因子會先是中性值，其他三個因子仍正常運作。可以執行以下步驟加速暖機：
+**代價**：剛部署（或 Blobs 累積庫是空的）的前幾天，累積天數不夠 10 天，量能異常因子會先是中性值，其他三個因子仍正常運作。可以執行以下步驟加速暖機：
 
 1. 部署完成後，打開一次 `https://你的站台.netlify.app/.netlify/functions/backfill-history`
 2. 這支 function 會自動跳過週六日，找最近的交易日補進 Blobs 累積庫，並且**只補「還沒存過」的新日期**——重複打開幾次也不會補到重複的天，而是自動往更早的交易日繼續補
@@ -312,7 +316,7 @@ npm run test:visual:ui
 - **TPEx（上櫃）欄位驗證進度**：欄位名稱本身有猜對（沒有拋出「欄位對應失敗」的例外），但部署後發現一個資料品質問題——`tpex_mainboard_daily_close_quotes` 回傳的清單混雜了大量權證（Warrant），導致「4644 檔」這種遠高於真實上櫃股票數（約 800 檔）的異常結果。**根因已找到並修正**（見 PROGRESS.md 階段 32）：已加入 `isWarrant` 過濾（見 `normalize.mjs`，依代碼位數＋名稱關鍵字判斷），TWSE／TPEx 兩邊抓取都套用。過濾後的實際檔數仍待下一次部署確認是否落回合理範圍。
 - **上櫃法人資料（FinMind）尚未經過真實請求驗證**：程式碼是照官方文件格式撰寫的，見上方「上櫃法人因子的兩階段設計」說明。只對「第一輪觀察榜裡的上櫃股票」查詢，不是全市場——如果一檔上櫃股票沒有進第一輪觀察榜的前段，它的法人因子會維持中性值，不會被 FinMind 補強。先前上櫃候選數量一直是 0，已排查出根因是「權證污染候選池」（見上一項、PROGRESS.md 階段 32），過濾修正後**尚待重新部署驗證**是否真的能查到有效的法人資料。
 - **免費 API 無官方使用授權**：抓取頻率過高可能被限流，設計上以「盤後跑一次」為主，避免高頻呼叫。
-- **部署前置需求（階段 33 已清理，push 前務必確認）**：`netlify/functions/` 頂層過去曾殘留重複的測試檔案（含一個帶 top-level await 的孤兒檔案），會導致 Netlify build 失敗（`Top-level await is currently not supported with the "cjs" output format`）。目前頂層只放真正要部署的 Function（`scan.mjs`／`backfill-history.mjs`／`backfill-backtest.mjs`／`latest.mjs`／`backtest-latest.mjs`／`fetch-daily-quotes.mjs`）與 `lib/`／`tests/` 子資料夾；測試腳本一律放在 `netlify/functions/tests/`，不可放在頂層。
+- **部署前置需求（階段 33 已清理，push 前務必確認）**：`netlify/functions/` 頂層過去曾殘留重複的測試檔案（含一個帶 top-level await 的孤兒檔案），會導致 Netlify build 失敗（`Top-level await is currently not supported with the "cjs" output format`）。目前頂層只放真正要部署的 Function（包含 `scan.mjs`、`backfill-*`、`latest.mjs`、`history-index.mjs`、`data-source-stats.mjs`、`stock-win-rate.mjs`、`sync-trading-calendar.mjs` 等）與 `lib/`／`tests/` 子資料夾；測試腳本一律放在 `netlify/functions/tests/`，不可放在頂層。
 
 ## 新手教學
 

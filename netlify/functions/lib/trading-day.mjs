@@ -132,8 +132,8 @@ export function formatDateParam(date) {
  * @param {Date} referenceDate
  * @param {number} count 要產生幾個候選日期
  * @param {Set<string>} [dynamicHolidays] 見 isNonTradingDay 的說明：自動同步的休市日集合，
- *   跟靜態表取聯集。預設空集合，維持向後相容——這是目前唯一還沒接上自動同步日曆的地方
- *   （見 README「交易日曆自動同步」章節的已知限制，這次補上）。
+ *   跟靜態表取聯集。預設空集合，維持向後相容；已接上自動同步日曆的呼叫端會傳入
+ *   動態集合，未傳入時則只使用靜態表。
  * @returns {Date[]}
  */
 export function getPastTradingDayCandidates(referenceDate, count, dynamicHolidays = new Set()) {

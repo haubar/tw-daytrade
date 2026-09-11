@@ -92,6 +92,16 @@ export async function getArchivedInstitutionalDates(store = defaultStore()) {
   return Array.isArray(index) ? index.filter(isIsoDate).sort((a, b) => b.localeCompare(a)) : [];
 }
 
+export async function mergeArchivedInstitutionalDates(dates, store = defaultStore()) {
+  const current = await getArchivedInstitutionalDates(store);
+  const merged = [...new Set([
+    ...dates.filter(isIsoDate),
+    ...current,
+  ])].sort((a, b) => b.localeCompare(a)).slice(0, MAX_INSTITUTIONAL_DAYS);
+  await store.setJSON(INSTITUTIONAL_INDEX_KEY, merged);
+  return merged;
+}
+
 export async function getRecentInstitutionalHistory(days = 20, excludeDate = null, store = defaultStore()) {
   const limit = Math.min(Math.max(Number.parseInt(days, 10) || 20, 1), MAX_INSTITUTIONAL_DAYS);
   const dates = (await getArchivedInstitutionalDates(store)).filter((date) => date !== excludeDate).slice(0, limit);

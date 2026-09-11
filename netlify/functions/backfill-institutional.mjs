@@ -2,7 +2,7 @@ import { fetchOneDay } from './lib/history.mjs';
 import { fetchInstitutionalNetBuy } from './lib/institutional.mjs';
 import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
 import { formatIsoDate, getPastTradingDayCandidates } from './lib/trading-day.mjs';
-import { getArchivedInstitutionalDates, saveInstitutionalSnapshot } from './lib/institutional-archive.mjs';
+import { getArchivedInstitutionalDates, mergeArchivedInstitutionalDates, saveInstitutionalSnapshot } from './lib/institutional-archive.mjs';
 import { errorResponse, jsonResponse } from './lib/http.mjs';
 
 const MAX_DAYS = 20;
@@ -69,6 +69,10 @@ export default async (req) => {
         debugInfo.push({ requestedDate, status: 'failed', error: error.message });
       }
     }
+
+    // Blob 索引可能有短暫的一致性延遲；最後以本次實際寫入的日期重新合併索引，
+    // 避免連續回補時較早的寫入覆蓋較新的日期。
+    if (saved.length > 0) await mergeArchivedInstitutionalDates(saved);
 
     return jsonResponse({ targetDays, savedDays: saved.length, saved, debugInfo });
   } catch (error) {

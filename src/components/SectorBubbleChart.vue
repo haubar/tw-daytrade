@@ -96,8 +96,8 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); });
 </script>
 
 <template>
-  <section class="mb-4 overflow-hidden rounded-md border border-hairline bg-panel">
-    <header class="flex flex-wrap items-baseline justify-between gap-2 border-b border-hairline px-4 pb-3 pt-4">
+  <section class="mb-4 overflow-hidden rounded-xl border border-hairline bg-panel shadow-[0_14px_36px_rgba(0,0,0,0.12)]">
+    <header class="flex flex-wrap items-baseline justify-between gap-2 border-b border-hairline px-4 pb-4 pt-5 sm:px-5">
       <div>
         <h2 class="m-0 font-display text-[1.15rem] font-bold text-crest">板塊資金潮汐回放</h2>
         <p class="m-0 mt-1 text-[0.72rem] text-mute">右邊代表近 5 日流入，上方代表近期力道相對增強；圓圈大小代表近 20 日規模。</p>
@@ -110,7 +110,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); });
     <p v-else-if="!currentFrame" class="px-4 py-8 text-center text-mute">目前尚未累積足夠的法人歷史資料。</p>
 
     <template v-else>
-      <div class="overflow-x-auto px-4 pt-4">
+      <div class="overflow-x-auto px-4 pt-4 sm:px-5">
         <svg viewBox="0 0 800 410" class="h-auto min-w-[680px] w-full rounded border border-hairline bg-ink" role="img" aria-label="板塊資金泡泡圖">
           <line x1="400" y1="26" x2="400" y2="382" stroke="#2e3140" stroke-width="1" />
           <line x1="24" y1="205" x2="776" y2="205" stroke="#2e3140" stroke-width="1" />
@@ -125,7 +125,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); });
         </svg>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2 px-4 py-3">
+      <div class="flex flex-wrap items-center gap-2 border-t border-hairline px-4 py-3 sm:px-5">
         <button type="button" class="rounded border px-2 py-1 text-xs" :class="watchlistOnly ? 'border-gold bg-gold text-ink' : 'border-hairline text-mute hover:text-paper'" @click="watchlistOnly = !watchlistOnly; loadReplay()">{{ watchlistOnly ? '只看自選相關' : '全部熱門板塊' }}</button>
         <button type="button" class="rounded border border-hairline px-2 py-1 text-sm text-mute hover:text-paper" @click="step(-1)">‹</button>
         <button type="button" class="rounded border border-gold px-3 py-1 text-sm text-gold" @click="togglePlay">{{ isPlaying ? '暫停' : '播放' }}</button>
@@ -133,7 +133,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); });
         <span class="font-mono text-xs text-mute">{{ currentFrame.date }} · 第 {{ frameIndex + 1 }}／{{ frames.length }} 天</span>
       </div>
 
-      <div v-if="selectedSector" class="mx-4 mb-4 rounded border border-hairline bg-panel-raised p-3">
+      <div v-if="selectedSector" class="mx-4 mb-4 rounded-lg border border-hairline bg-panel-raised p-3 sm:mx-5">
         <div class="flex items-baseline justify-between gap-2">
           <h3 class="m-0 text-sm font-bold">{{ selectedSector.name }}</h3>
           <span class="rounded px-2 py-1 text-xs" :style="{ color: stateColors[selectedSector.state] }">{{ stateLabels[selectedSector.state] }}</span>

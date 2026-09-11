@@ -22,6 +22,15 @@ const filteredSectors = computed(() => {
     : sectors.filter((sector) => sector.state === selectedState.value);
 });
 
+const flowSummary = computed(() => {
+  const sectors = flow.value?.sectors ?? [];
+  return {
+    surge: sectors.filter((sector) => sector.state === 'surge').length,
+    positive: sectors.filter((sector) => Number(sector.recent5NetBuyAmount) > 0).length,
+    total: sectors.reduce((sum, sector) => sum + (Number(sector.recent5NetBuyAmount) || 0), 0),
+  };
+});
+
 const formatAmount = (value) => {
   if (!Number.isFinite(value)) return '—';
   const abs = Math.abs(value);
@@ -56,8 +65,8 @@ onMounted(loadFlow);
 </script>
 
 <template>
-  <section class="mb-4 overflow-hidden rounded-md border border-hairline bg-panel">
-    <header class="flex flex-wrap items-baseline justify-between gap-2 border-b border-hairline px-4 pb-3 pt-4">
+  <section class="mb-4 overflow-hidden rounded-xl border border-hairline bg-panel shadow-[0_14px_36px_rgba(0,0,0,0.12)]">
+    <header class="flex flex-wrap items-baseline justify-between gap-2 border-b border-hairline px-4 pb-4 pt-5 sm:px-5">
       <div>
         <h2 class="m-0 font-display text-[1.15rem] font-bold text-crest">熱門板塊資金流向</h2>
         <p class="m-0 mt-1 text-[0.72rem] text-mute">近 5 日看短線流向，近 20 日看資金累積；金額為估算值。</p>
@@ -65,7 +74,22 @@ onMounted(loadFlow);
       <button type="button" class="text-sm text-mute underline hover:text-paper" :disabled="isLoading" @click="loadFlow">重新整理</button>
     </header>
 
-    <div class="flex flex-wrap gap-2 border-b border-hairline px-4 py-3">
+    <div v-if="flow && !isLoading" class="grid grid-cols-3 gap-2 border-b border-hairline px-4 py-3 sm:px-5">
+      <div class="rounded-lg bg-ink/40 px-3 py-2">
+        <span class="block text-[0.65rem] text-mute">資料涵蓋</span>
+        <strong class="font-mono text-sm text-paper">{{ flow.daysScanned }} 日</strong>
+      </div>
+      <div class="rounded-lg bg-ink/40 px-3 py-2">
+        <span class="block text-[0.65rem] text-mute">漲潮板塊</span>
+        <strong class="font-mono text-sm text-surge">{{ flowSummary.surge }} 個</strong>
+      </div>
+      <div class="rounded-lg bg-ink/40 px-3 py-2">
+        <span class="block text-[0.65rem] text-mute">近 5 日偏多</span>
+        <strong class="font-mono text-sm" :class="flowSummary.total >= 0 ? 'text-surge' : 'text-ebb'">{{ flowSummary.positive }}/{{ flow.sectors.length }}</strong>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap gap-2 border-b border-hairline px-4 py-3 sm:px-5">
       <button type="button" class="rounded border px-2 py-1 text-xs" :class="watchlistOnly ? 'border-gold bg-gold text-ink' : 'border-hairline text-mute hover:text-paper'" @click="watchlistOnly = !watchlistOnly; loadFlow()">{{ watchlistOnly ? '只看自選相關' : '全部熱門板塊' }}</button>
       <button
         v-for="(label, state) in { all: '全部', surge: '漲潮', rotation: '輪動', watch: '觀望', ebb: '退潮' }"

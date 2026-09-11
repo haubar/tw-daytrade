@@ -95,6 +95,13 @@ export async function getStockPointHistory(rawCode) {
 
     if (recordsByDate.size === 0) {
       const analysisStore = getStore('watchlist-analysis', { siteID, token });
+      const today = new Date().toISOString().slice(0, 10);
+      const todayCached = await analysisStore.get(`${today}_${code}`, { type: 'json', consistency: 'strong' });
+      if (todayCached) recordsByDate.set(todayCached.date, normalizeOnDemandRecord(todayCached));
+    }
+
+    if (recordsByDate.size === 0) {
+      const analysisStore = getStore('watchlist-analysis', { siteID, token });
       const { blobs: analysisBlobs = [] } = await analysisStore.list();
       const matching = analysisBlobs
         .filter((blob) => new RegExp(`^\\d{4}-\\d{2}-\\d{2}_${code}$`).test(blob.key))

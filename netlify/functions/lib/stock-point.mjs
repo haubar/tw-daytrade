@@ -1,6 +1,7 @@
 import { getStore } from '@netlify/blobs';
 
 const STORE_NAME = 'scan-results';
+const LOCAL_TRIGGER_STORE_NAME = 'stock-point-trigger-cache';
 const MAX_DAYS = 7;
 
 const normalizeCode = (value) => String(value ?? '').trim().toUpperCase();
@@ -77,6 +78,11 @@ export async function getStockPointHistory(rawCode) {
   }
 
   try {
+    const localStore = getStore(LOCAL_TRIGGER_STORE_NAME);
+    const today = new Date().toISOString().slice(0, 10);
+    const localCached = await localStore.get(`${today}_${code}`, { type: 'json', consistency: 'strong' });
+    if (localCached) return { enabled: true, triggered: false, records: [localCached] };
+
     const store = getStore(STORE_NAME, { siteID, token });
     const { blobs = [] } = await store.list();
     const entries = blobs
@@ -95,7 +101,6 @@ export async function getStockPointHistory(rawCode) {
 
     if (recordsByDate.size === 0) {
       const analysisStore = getStore('watchlist-analysis', { siteID, token });
-      const today = new Date().toISOString().slice(0, 10);
       const todayCached = await analysisStore.get(`${today}_${code}`, { type: 'json', consistency: 'strong' });
       if (todayCached) recordsByDate.set(todayCached.date, normalizeOnDemandRecord(todayCached));
     }
@@ -114,7 +119,10 @@ export async function getStockPointHistory(rawCode) {
 
     if (recordsByDate.size === 0) {
       const triggered = await triggerOnDemandAnalysis(code, analyzeUrl, analyzeSecret);
-      if (triggered) return { enabled: true, triggered: true, records: [triggered] };
+      if (triggered) {
+        await localStore.setJSON(`${triggered.date}_${code}`, triggered);
+        return { enabled: true, triggered: true, records: [triggered] };
+      }
     }
 
     return {

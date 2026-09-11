@@ -46,7 +46,7 @@ const MAX_FINMIND_CANDIDATES = 20;
 // 排程設定：收盤後台灣時間約 14:10（UTC 06:10）自動觸發，週一到週五（UTC cron 語法）
 // 排程觸發與手動打開網址呼叫的是同一個 handler，執行完都會把結果存進 Netlify Blobs（見 lib/storage.mjs），
 // 前端 Dashboard 之後會透過 latest.mjs 讀取這裡存的最新結果。
-export const config = { schedule: '10 6 * * 1-5' };
+export const config = { schedule: '30 6 * * 1-5' };
 
 const fetchTodayTwseQuotes = async () => {
   const res = await fetch(TWSE_URL, { signal: AbortSignal.timeout(10000) });

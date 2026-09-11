@@ -25,6 +25,8 @@
 const T86_URL_BASE = 'https://www.twse.com.tw/rwd/zh/fund/T86';
 const CODE_FIELD_NAME = '證券代號';
 const NET_BUY_FIELD_NAME = '三大法人買賣超股數';
+const T86_MAX_ATTEMPTS = 3;
+const T86_RETRY_DELAY_MS = 800;
 
 /**
  * 把千分位逗號數字字串轉成數字（例如 "14,785,200" → 14785200）
@@ -120,11 +122,22 @@ export async function fetchInstitutionalNetBuy(date = new Date()) {
   const requestedDate = `${y}-${m}-${d}`;
 
   const url = `${T86_URL_BASE}?date=${dateParam}&selectType=ALL&response=json`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-  if (!res.ok) {
-    throw new Error(`三大法人買賣超日報端點回應錯誤: HTTP ${res.status}`);
+  let payload;
+  let lastError;
+  for (let attempt = 1; attempt <= T86_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) throw new Error(`三大法人買賣超日報端點回應錯誤: HTTP ${res.status}`);
+      payload = await res.json();
+      if (payload?.stat === 'OK' || attempt === T86_MAX_ATTEMPTS) break;
+      lastError = new Error(`T86 回應狀態：${payload?.stat ?? '未知'}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === T86_MAX_ATTEMPTS) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, T86_RETRY_DELAY_MS));
   }
-  const payload = await res.json();
+  if (!payload && lastError) throw lastError;
 
   const netBuyByCode = parseInstitutionalJson(payload);
   const actualDate = formatT86Date(payload?.date);

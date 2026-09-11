@@ -2,6 +2,7 @@ import { getBacktestIndex, getBacktestResultByDate } from './lib/backtest-storag
 import { getLatestScan } from './lib/storage.mjs';
 import { getSharedWatchlist } from './lib/watchlist.mjs';
 import { buildStockDetail } from './lib/stock-detail.mjs';
+import { getStockPointHistory } from './lib/stock-point.mjs';
 import { errorResponse, jsonResponse } from './lib/http.mjs';
 
 const clampInt = (raw, fallback, min, max) => {
@@ -17,10 +18,11 @@ export default async (req) => {
     if (!/^\d{4,6}$/.test(code)) return jsonResponse({ error: '請提供 4 到 6 碼股票代碼' }, 400);
 
     const days = clampInt(url.searchParams.get('days'), 60, 1, 260);
-    const [latestScan, sharedWatchlist, index] = await Promise.all([
+    const [latestScan, sharedWatchlist, index, stockPoint] = await Promise.all([
       getLatestScan(),
       getSharedWatchlist(),
       getBacktestIndex(),
+      getStockPointHistory(code),
     ]);
     const dates = index.slice().sort((a, b) => String(b).localeCompare(String(a))).slice(0, days);
     const results = await Promise.all(dates.map((date) => getBacktestResultByDate(date)));
@@ -31,6 +33,7 @@ export default async (req) => {
       latestScan,
       sharedItem,
       results,
+      stockPoint,
       daysRequested: days,
     }));
   } catch (error) {

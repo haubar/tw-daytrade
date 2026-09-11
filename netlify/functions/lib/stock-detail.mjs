@@ -36,7 +36,7 @@ const summarizeBucket = (bucket) => {
  * 組合自選股詳細資料。計算沿用 stock-win-rate 的 buildStockStats，避免個股頁
  * 與既有排行 API 使用不同的勝率定義。
  */
-export function buildStockDetail({ code: rawCode, latestScan = null, sharedItem = null, results = [], daysRequested = 60 }) {
+export function buildStockDetail({ code: rawCode, latestScan = null, sharedItem = null, results = [], stockPoint = null, daysRequested = 60 }) {
   const code = normalizeCode(rawCode);
   const stats = buildStockStats(results).get(code);
   const latestQuote = findLatestQuote(latestScan, code);
@@ -55,6 +55,13 @@ export function buildStockDetail({ code: rawCode, latestScan = null, sharedItem 
           changePercent: latestQuote.changePercent ?? null,
           volume: latestQuote.volume ?? null,
           score: latestQuote.score ?? null,
+          signals: {
+            volumeContribution: latestQuote.volumeContribution ?? null,
+            gapContribution: latestQuote.gapContribution ?? null,
+            relativeStrengthContribution: latestQuote.relativeStrengthContribution ?? null,
+            institutionalContribution: latestQuote.institutionalContribution ?? null,
+            relativeStrengthWindowDays: latestQuote.relativeStrengthWindowDays ?? null,
+          },
           side: latestScan?.longWatchlist?.some((item) => normalizeCode(item.code) === code)
             ? 'long'
             : 'short',
@@ -62,6 +69,7 @@ export function buildStockDetail({ code: rawCode, latestScan = null, sharedItem 
           institutionalDataMissing: latestQuote.institutionalDataMissing ?? null,
         }
       : null,
+    stockPoint,
     strategies: Object.fromEntries(STRATEGIES.map(({ key, label }) => [key, { label, ...summarizeBucket(stats?.[key]) }])),
     lastSeenDate: stats?.lastSeenDate ?? null,
     daysRequested,

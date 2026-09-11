@@ -44,6 +44,8 @@ const detail = buildStockDetail({
 
 assertEqual(detail.name, '台積電', '個股明細應優先使用最新行情名稱');
 assertEqual(detail.current.close, 1000, '個股明細應包含最新收盤價');
+assertEqual(detail.current.signals.volumeContribution, null, '沒有因子資料時不應自行猜測量能貢獻');
+assertEqual(detail.stockPoint, null, '沒有跨專案資料時應保留空值');
 assertEqual(detail.strategies.base.trades, 2, '基準策略應彙總交易次數');
 assertEqual(detail.strategies.base.winRatePercent, 100, '基準策略勝率應依既有回測交易計算');
 assertEqual(detail.strategies.adv.avgNetReturnPercent, 0.75, '高級策略平均報酬應正確計算');

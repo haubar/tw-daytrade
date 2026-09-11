@@ -100,17 +100,34 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
 </script>
 
 <template>
-  <div class="flex min-h-screen justify-center px-4 pb-8 pt-6">
+  <div class="min-h-screen bg-ink px-3 pb-10 pt-3 sm:px-6 lg:px-8">
     <HistoryPanel ref="historyPanelRef" />
 
     <BackfillControlView v-if="currentView === 'backfill-control'" @close="currentView = 'dashboard'" />
 
-    <main v-else class="w-full max-w-[1080px]">
+    <main v-else class="mx-auto w-full max-w-[1240px]">
       <template v-if="isLoading">
-        <p class="py-8 text-center font-mono text-mute">正在讀取今日觀察榜…</p>
+        <div class="mx-auto max-w-xl py-20 text-center">
+          <div class="mb-4 text-3xl text-gold" aria-hidden="true">⌁</div>
+          <p class="m-0 font-display text-lg text-paper">正在整理今日市場資料</p>
+          <p class="m-0 mt-2 text-sm text-mute">行情、法人與量化篩選結果載入中…</p>
+        </div>
       </template>
 
       <template v-else-if="result">
+        <div class="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-hairline pb-3">
+          <div class="flex items-center gap-2">
+            <span class="rounded-full border border-gold/50 bg-gold/10 px-2.5 py-1 text-[0.68rem] font-bold tracking-[0.12em] text-gold">盤後分析工作台</span>
+            <span class="hidden text-xs text-mute sm:inline">先看市場，再看板塊，最後回到個股</span>
+          </div>
+          <nav class="flex items-center gap-3 text-xs text-mute" aria-label="頁面導覽">
+            <a class="hover:text-paper" href="#personal">自選股</a>
+            <a class="hover:text-paper" href="#sectors">板塊</a>
+            <a class="hover:text-paper" href="#screening">篩選</a>
+            <a class="hover:text-paper" href="#watchlists">觀察榜</a>
+          </nav>
+        </div>
+
         <StatusBar
           :generated-at="result.generatedAt"
           :market-change-percent="result.marketChangePercent"
@@ -120,13 +137,39 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
           :is-sample="isSample"
         />
 
-        <PersonalPanel />
-        <SectorFlowPanel />
-        <SectorBubbleChart />
+        <section id="personal" class="mb-5 scroll-mt-4">
+          <div class="mb-2 flex items-end justify-between gap-3">
+            <div>
+              <p class="m-0 text-[0.68rem] font-bold tracking-[0.14em] text-gold">STEP 01 · YOUR LIST</p>
+              <p class="m-0 mt-1 text-xs text-mute">先從你關注的股票開始，查看勝率與詳細資料。</p>
+            </div>
+          </div>
+          <PersonalPanel />
+        </section>
 
-        <div class="mb-4">
+        <section id="sectors" class="mb-5 scroll-mt-4">
+          <div class="mb-2 flex items-end justify-between gap-3">
+            <div>
+              <p class="m-0 text-[0.68rem] font-bold tracking-[0.14em] text-crest">STEP 02 · MARKET MAP</p>
+              <p class="m-0 mt-1 text-xs text-mute">用板塊狀態了解資金正在流入、輪動，還是退潮。</p>
+            </div>
+          </div>
+          <div class="grid items-start gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+            <SectorFlowPanel />
+            <SectorBubbleChart />
+          </div>
+        </section>
+
+        <section id="screening" class="mb-5 scroll-mt-4">
+          <div class="mb-2 flex items-end justify-between gap-3">
+            <div>
+              <p class="m-0 text-[0.68rem] font-bold tracking-[0.14em] text-signal">STEP 03 · NARROW IT DOWN</p>
+              <p class="m-0 mt-1 text-xs text-mute">用價格、成交量與漲幅篩掉不適合你策略的標的。</p>
+            </div>
+            <span v-if="filterActive" class="rounded-full bg-signal/10 px-2 py-1 text-[0.68rem] text-signal">篩選已啟用</span>
+          </div>
           <FilterPanel v-model="filters" />
-        </div>
+        </section>
 
         <p v-if="filterActive" class="mb-3 font-mono text-[0.78rem] text-mute">
           已套用篩選：多方 {{ filteredLongWatchlist.length }}/{{ result.longWatchlist.length }} 檔 ·
@@ -200,7 +243,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
           </p>
         </section>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <section id="watchlists" class="scroll-mt-4">
+          <div class="mb-2 flex items-end justify-between gap-3">
+            <div>
+              <p class="m-0 text-[0.68rem] font-bold tracking-[0.14em] text-paper">STEP 04 · MAKE YOUR JUDGMENT</p>
+              <p class="m-0 mt-1 text-xs text-mute">這裡是篩選結果，不是買賣指令；請搭配個人判斷與風險控管。</p>
+            </div>
+            <span v-if="filterActive" class="font-mono text-[0.68rem] text-mute">多方 {{ filteredLongWatchlist.length }} · 空方 {{ filteredShortWatchlist.length }}</span>
+          </div>
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <WatchlistPanel
             title="多方觀察榜"
             :items="filteredLongWatchlist"
@@ -215,7 +266,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
             :institutional-data-coverage-version="result.institutionalDataCoverageVersion"
             :empty-message="filterActive ? '沒有符合篩選條件的股票，試著放寬篩選範圍。' : '今日沒有符合空方條件的股票。'"
           />
-        </div>
+          </div>
+        </section>
 
         <footer class="mt-6 flex flex-col gap-1 border-t border-hairline pt-4 text-[0.78rem] text-mute">
           <p class="m-0">{{ result.disclaimer }}</p>

@@ -34,7 +34,7 @@ STOCK_POINT_ANALYZE_SECRET=<與 stock-point 相同的 server-to-server secret>
 - `feat.bbWidth`：布林帶寬
 - `feat.pToMa60`：相對 MA60 乖離
 - `feat.roc10`：10 日 ROC
-- `result.aiScore`：POINT 分數
+- `results[].aiScore`：POINT 分數
 
 ## 自選股觸發分析
 
@@ -58,6 +58,8 @@ STOCK_POINT_ANALYZE_SECRET=<與 tw-daytrade 相同的 secret>
 - 使用 `FINMIND_TOKEN` 在 server-side 取得行情，瀏覽器手動掃描仍可保留
 
 自選股的 POINT 相對分數會使用最近一次完整掃描產生的 `stats.scoreReference`；因此首次自動掃描完成前，單股技術分析的 `score` 仍可能是 `null`。
+
+部署後可在 Netlify 的 Functions 頁面確認 `scheduled-scan` 顯示 Scheduled 標記。第一次自動掃描會依排程在下一個符合條件的交易日執行；不需要手動呼叫排程網址。
 
 ## 資料處理原則
 

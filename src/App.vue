@@ -5,6 +5,7 @@ import WatchlistPanel from './components/WatchlistPanel.vue';
 import FilterPanel from './components/FilterPanel.vue';
 import HistoryPanel from './components/HistoryPanel.vue';
 import BackfillControlPage from './components/BackfillControlPage.vue';
+import PersonalPanel from './components/PersonalPanel.vue';
 import { sampleScanResult } from './sampleData.js';
 import { filterWatchlist, isFilterActive, DEFAULT_MIN_VOLUME_LOTS } from './utils/filterWatchlist.js';
 import { formatPercent } from './utils/format.js';
@@ -120,6 +121,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
           :data-source-status="result.dataSourceStatus"
           :is-sample="isSample"
         />
+
+        <PersonalPanel />
 
         <div class="mb-4">
           <FilterPanel v-model="filters" />

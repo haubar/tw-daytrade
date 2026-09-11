@@ -34,6 +34,7 @@ import { evaluateOpenToCloseLong, evaluateOpenToCloseShort } from './lib/backtes
 import { saveBacktestResult } from './lib/backtest-storage.mjs';
 import { isNonTradingDay, isMarketDataReady, formatTaiwanIsoDate } from './lib/trading-day.mjs';
 import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
+import { saveInstitutionalSnapshot } from './lib/institutional-archive.mjs';
 
 const TWSE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
 const TPEX_URL = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes';
@@ -182,6 +183,7 @@ export default async (req) => {
     // 是「有抓到回應，但解析結果是空的」，兩者原因、該採取的處理方式完全不同，混在一起
     // 的訊息會誤導看的人去查「網路是不是斷了」，而不是去查「解析邏輯是不是有問題」。
     let institutionalNetBuy = new Map();
+    let tpexInstitutionalNetBuy = new Map();
     let institutionalWarning = null;
     if (institutionalResult.status === 'fulfilled') {
       institutionalNetBuy = institutionalResult.value.netBuyByCode;
@@ -245,6 +247,7 @@ export default async (req) => {
         );
 
         if (finmindNetBuy.size > 0) {
+          tpexInstitutionalNetBuy = finmindNetBuy;
           // 合併 T86（上市）跟 FinMind（上櫃候選）兩份 map：兩者股票代碼不重疊，直接 union 即可。
           const mergedInstitutionalNetBuy = new Map([...institutionalNetBuy, ...finmindNetBuy]);
           result = screenWatchlists(todayQuotes, volumeHistory, mergedInstitutionalNetBuy, {
@@ -285,6 +288,34 @@ export default async (req) => {
       }
     }
 
+    // 法人歷史資料獨立歸檔，供自選股趨勢與板塊統計使用。只保存資料源實際回傳的紀錄，
+    // 不把缺資料的股票填成 0；日期驗證與非交易日判斷沿用行情歷史庫的規則。
+    let institutionalArchiveWarning = null;
+    try {
+      const canArchive = !isNonTradingDay(new Date(), dynamicHolidays) && isMarketDataReady(new Date());
+      if (!canArchive) {
+        institutionalArchiveWarning = '今天不是可歸檔的正式盤後時點，暫不寫入法人歷史資料';
+      } else if (institutionalNetBuy.size === 0 && tpexInstitutionalNetBuy.size === 0) {
+        institutionalArchiveWarning = '本次沒有任何可用法人資料，未建立空白快照';
+      } else {
+        const records = [
+          ...[...institutionalNetBuy.entries()].map(([code, netBuyShares]) => ({ code, netBuyShares, market: 'TWSE', source: 'TWSE-T86' })),
+          ...[...tpexInstitutionalNetBuy.entries()].map(([code, netBuyShares]) => ({ code, netBuyShares, market: 'TPEx', source: 'FinMind' })),
+        ];
+        await saveInstitutionalSnapshot(todayDateStr, records, {
+          coverage: {
+            twse: institutionalNetBuy.size,
+            tpex: tpexInstitutionalNetBuy.size,
+            tpexIsCandidateOnly: true,
+            twseDate: institutionalResult.status === 'fulfilled' ? institutionalResult.value.actualDate : null,
+            twseDateMismatch: institutionalResult.status === 'fulfilled' ? institutionalResult.value.dateMismatch : null,
+          },
+        });
+      }
+    } catch (e) {
+      institutionalArchiveWarning = `法人歷史資料寫入失敗（不影響本次掃描）: ${e.message}`;
+    }
+
     const payload = {
       generatedAt: new Date().toISOString(),
       // 前端用這個版本欄位區分新邏輯產生的結果與部署前已存在的 Blobs 快取。
@@ -308,6 +339,7 @@ export default async (req) => {
           : '尚未累積到任何一天的多日資料，相對強弱因子暫時全部使用單日版本（這是這次升級後才開始存的資料，需要幾個交易日重新累積）',
         taiex: realTaiexChangePercent !== null ? 'ok（使用真實 TAIEX 指數）' : `失敗，改用估計值${taiexWarning ? ` ⚠ ${taiexWarning}` : ''}`,
         finmindTpexInstitutional: finmindStatus,
+        institutionalArchive: institutionalArchiveWarning ? `⚠ ${institutionalArchiveWarning}` : 'ok（今日法人資料已歸檔）',
         dayTradeEligibility: dayTradeEligibleCodes !== null
           ? `ok（${dayTradeEligibleCodes.size} 檔上市股票今天可以現股當沖；上櫃股票暫無資料源，一律顯示未知）`
           : `失敗（本次 dayTradeEligible 欄位全部顯示未知）: ${dayTradeEligibleWarning}`,

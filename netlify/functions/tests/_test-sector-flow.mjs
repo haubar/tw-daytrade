@@ -1,4 +1,4 @@
-import { buildSectorFlow } from '../lib/sector-flow.mjs';
+import { buildSectorFlow, buildSectorReplay } from '../lib/sector-flow.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -34,6 +34,14 @@ const missingClose = buildSectorFlow([
   { date: '2026-09-04', records: [{ code: '2330', netBuyShares: 100, close: null }] },
 ], { sectors });
 assertEqual(missingClose.sectors[0].coveredRecords, 0, '缺收盤價時不應把法人股數誤算成資金金額');
+
+const replay = buildSectorReplay([
+  { date: '2026-09-01', records: [{ code: '2330', netBuyShares: 10, close: 100 }] },
+  { date: '2026-09-02', records: [{ code: '2330', netBuyShares: 20, close: 100 }] },
+], { sectors });
+assertEqual(replay.length, 2, '回放應為每個交易日建立一個 frame');
+assertEqual(replay[1].date, '2026-09-02', '回放 frame 應依日期排序');
+assertEqual(replay[1].sectors[0].recent5NetBuyAmount, 3000, '回放應使用截至當日的滾動資金統計');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

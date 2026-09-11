@@ -7,6 +7,7 @@ import HistoryPanel from './components/HistoryPanel.vue';
 import BackfillControlPage from './components/BackfillControlPage.vue';
 import PersonalPanel from './components/PersonalPanel.vue';
 import SectorFlowPanel from './components/SectorFlowPanel.vue';
+import SectorBubbleChart from './components/SectorBubbleChart.vue';
 import { sampleScanResult } from './sampleData.js';
 import { filterWatchlist, isFilterActive, DEFAULT_MIN_VOLUME_LOTS } from './utils/filterWatchlist.js';
 import { formatPercent } from './utils/format.js';
@@ -125,6 +126,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalKeydown));
 
         <PersonalPanel />
         <SectorFlowPanel />
+        <SectorBubbleChart />
 
         <div class="mb-4">
           <FilterPanel v-model="filters" />

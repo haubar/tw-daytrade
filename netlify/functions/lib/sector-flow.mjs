@@ -81,3 +81,14 @@ export function buildSectorFlow(snapshots, options = {}) {
     disclaimer: '板塊資金為法人買賣超股數乘當日收盤價的估算；板塊分類由本專案維護，不代表官方分類或投資建議。',
   };
 }
+
+export function buildSectorReplay(snapshots, options = {}) {
+  const orderedSnapshots = [...(snapshots ?? [])].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return orderedSnapshots.map((snapshot, index) => {
+    const flow = buildSectorFlow(orderedSnapshots.slice(0, index + 1), options);
+    return {
+      date: snapshot.date,
+      ...flow,
+    };
+  });
+}

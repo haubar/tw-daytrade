@@ -120,7 +120,7 @@ onMounted(loadFlow);
         <tbody class="divide-y divide-hairline">
           <tr v-for="sector in filteredSectors" :key="sector.id" class="hover:bg-panel-raised">
             <td class="px-4 py-3 font-medium">{{ sector.name }} <span class="text-xs text-mute">{{ sector.constituentCount }} 檔</span></td>
-            <td class="px-2 py-3"><span class="rounded border px-2 py-1 text-xs" :class="stateClass(sector.state)">{{ stateLabels[sector.state] }}</span></td>
+            <td class="px-2 py-3"><span class="inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs" :class="stateClass(sector.state)">{{ stateLabels[sector.state] }}</span></td>
             <td class="px-2 py-3 text-right font-mono" :class="sector.recent5NetBuyAmount >= 0 ? 'text-surge' : 'text-ebb'">{{ formatAmount(sector.recent5NetBuyAmount) }}</td>
             <td class="px-2 py-3 text-right font-mono" :class="sector.recent20NetBuyAmount >= 0 ? 'text-surge' : 'text-ebb'">{{ formatAmount(sector.recent20NetBuyAmount) }}</td>
             <td class="px-2 py-3 text-right font-mono text-mute">{{ sector.recent5BuyCount }}／{{ sector.recent5SellCount }}</td>

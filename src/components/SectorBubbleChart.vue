@@ -136,7 +136,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); });
       <div v-if="selectedSector" class="mx-4 mb-4 rounded-lg border border-hairline bg-panel-raised p-3 sm:mx-5">
         <div class="flex items-baseline justify-between gap-2">
           <h3 class="m-0 text-sm font-bold">{{ selectedSector.name }}</h3>
-          <span class="rounded px-2 py-1 text-xs" :style="{ color: stateColors[selectedSector.state] }">{{ stateLabels[selectedSector.state] }}</span>
+          <span class="inline-flex whitespace-nowrap rounded px-2 py-1 text-xs" :style="{ color: stateColors[selectedSector.state] }">{{ stateLabels[selectedSector.state] }}</span>
         </div>
         <p class="m-0 mt-2 font-mono text-xs text-mute">近 5 日 {{ formatAmount(selectedSector.recent5NetBuyAmount) }} · 近 20 日 {{ formatAmount(selectedSector.recent20NetBuyAmount) }} · 買 {{ selectedSector.recent5BuyCount }}／賣 {{ selectedSector.recent5SellCount }}</p>
         <p class="m-0 mt-1 text-[0.7rem] text-mute">圓圈只代表資金規模，不代表好壞；板塊分類與法人金額皆是整理／估算資料。</p>

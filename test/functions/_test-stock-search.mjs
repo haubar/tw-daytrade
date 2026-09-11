@@ -1,4 +1,4 @@
-import { searchQuotes } from '../../netlify/functions/lib/stock-search.mjs';
+import { findQuoteByCode, searchQuotes } from '../../netlify/functions/lib/stock-search.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -27,6 +27,8 @@ assertEqual(searchQuotes(quotes, '台積').map((item) => item.code), ['2330'], '
 assertEqual(searchQuotes(quotes, 'twse').map((item) => item.code), [], '不應用市場名稱誤配股票');
 assertEqual(searchQuotes(quotes, '').length, 0, '空搜尋字串應回傳空結果');
 assertEqual(searchQuotes(quotes, '23').map((item) => item.code), ['2303', '2330'], '股號前綴應可搜尋並排序');
+assertEqual(findQuoteByCode(quotes, '2330', 'TWSE')?.name, '台積電', '加入前應能依代碼與市場確認行情');
+assertEqual(findQuoteByCode(quotes, '2330', 'TPEx'), null, '市場不符時不可通過確認');
 
 if (failed > 0) {
   console.error(`\n測試結果：${passed} 通過, ${failed} 失敗`);

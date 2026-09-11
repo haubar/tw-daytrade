@@ -34,3 +34,10 @@ export function searchQuotes(quotes, query, limit = 20) {
       volume: quote.volume,
     }));
 }
+
+export function findQuoteByCode(quotes, code, market = null) {
+  const normalizedCode = normalizeText(code);
+  const normalizedMarket = market ? normalizeText(market) : null;
+  return (quotes ?? []).find((quote) => normalizeText(quote?.code) === normalizedCode
+    && (!normalizedMarket || normalizeText(quote?.market) === normalizedMarket)) ?? null;
+}

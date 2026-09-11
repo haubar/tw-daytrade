@@ -1,4 +1,6 @@
 import { addToSharedWatchlist, getSharedWatchlist, removeFromSharedWatchlist } from './lib/watchlist.mjs';
+import { fetchTwseQuotes, fetchTpexQuotes } from './fetch-daily-quotes.mjs';
+import { findQuoteByCode } from './lib/stock-search.mjs';
 
 function json(value, status = 200) {
   return new Response(JSON.stringify(value, null, 2), {
@@ -14,7 +16,21 @@ export default async (req) => {
 
     const body = await req.json();
     if (req.method === 'POST') {
-      return json(await addToSharedWatchlist(body));
+      const results = await Promise.allSettled([fetchTwseQuotes(), fetchTpexQuotes()]);
+      const quotes = results
+        .filter((result) => result.status === 'fulfilled')
+        .flatMap((result) => result.value.normalized);
+      const verified = findQuoteByCode(quotes, body?.code, body?.market);
+      if (!verified) {
+        const sourceFailure = results.every((result) => result.status === 'rejected');
+        return json({ error: sourceFailure ? '目前無法取得上市／上櫃行情，暫時無法確認這檔股票。' : '找不到這檔股票的有效行情，請重新搜尋後再加入。' }, sourceFailure ? 503 : 400);
+      }
+      return json(await addToSharedWatchlist({
+        ...body,
+        code: verified.code,
+        name: verified.name,
+        market: verified.market,
+      }));
     }
 
     const result = await removeFromSharedWatchlist(body?.code);

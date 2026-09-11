@@ -47,6 +47,18 @@ STOCK_POINT_ANALYZE_SECRET=<與 tw-daytrade 相同的 secret>
 
 單股觸發分析會保存到 `watchlist-analysis` store，key 為 `YYYY-MM-DD_code`。單股分析可計算技術指標，但沒有完整掃描池時不會虛構 POINT 相對排名分數，因此 `score` 可能是 `null`。
 
+## 完整掃描排程
+
+`stock-point` 會在台灣時間週一至週五 15:30 由 Netlify Scheduled Function 執行完整掃描，並把結果寫入同一個 `scan-results` store：
+
+- 排程：`30 7 * * 1-5`（UTC）
+- 掃描股票池：目前頁面設定的 TWSE／TPEx 熱門股票池，去除重複代號
+- 休市判斷：呼叫 TWSE 官方 `holidaySchedule`，週末或官方休市日不執行
+- 無法取得官方休市日：為避免把上一交易日資料誤存成今日，該次直接跳過
+- 使用 `FINMIND_TOKEN` 在 server-side 取得行情，瀏覽器手動掃描仍可保留
+
+自選股的 POINT 相對分數會使用最近一次完整掃描產生的 `stats.scoreReference`；因此首次自動掃描完成前，單股技術分析的 `score` 仍可能是 `null`。
+
 ## 資料處理原則
 
 1. 只由 Netlify Function 以 `siteID` 與 token 讀取，瀏覽器不直接接觸 token。

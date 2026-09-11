@@ -39,7 +39,11 @@ export async function getStockPointHistory(rawCode) {
   const code = normalizeCode(rawCode);
   const { siteID, token } = getConfig();
   if (!siteID || !token) {
-    return { enabled: false, records: [], reason: '尚未設定 stock-point 跨專案 Blob 存取設定' };
+    const missing = [
+      !siteID ? 'STOCK_POINT_SITE_ID' : null,
+      !token ? 'STOCK_POINT_BLOBS_TOKEN' : null,
+    ].filter(Boolean);
+    return { enabled: false, records: [], reason: `尚未設定：${missing.join('、')}` };
   }
 
   try {

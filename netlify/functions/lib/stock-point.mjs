@@ -8,6 +8,8 @@ const normalizeCode = (value) => String(value ?? '').trim().toUpperCase();
 const getConfig = () => ({
   siteID: String(process.env.STOCK_POINT_SITE_ID ?? '').trim(),
   token: String(process.env.STOCK_POINT_BLOBS_TOKEN ?? '').trim(),
+  analyzeUrl: String(process.env.STOCK_POINT_ANALYZE_URL ?? '').trim(),
+  analyzeSecret: String(process.env.STOCK_POINT_ANALYZE_SECRET ?? '').trim(),
 });
 
 const parseScanKey = (key) => {
@@ -35,9 +37,37 @@ const normalizeRecord = (date, scan, code) => {
 
 export const parseStockPointScanKey = parseScanKey;
 
+const normalizeOnDemandRecord = (record) => {
+  const features = record?.features ?? {};
+  return {
+    date: record?.date ?? null,
+    market: null,
+    close: Number.isFinite(Number(features.cur)) ? Number(features.cur) : null,
+    volatilityPercent: Number.isFinite(Number(features.histVol)) ? Number(features.histVol) : null,
+    bollingerWidthPercent: Number.isFinite(Number(features.bbWidth)) ? Number(features.bbWidth) : null,
+    priceToMa60Percent: Number.isFinite(Number(features.pToMa60)) ? Number(features.pToMa60) : null,
+    roc10Percent: Number.isFinite(Number(features.roc10)) ? Number(features.roc10) : null,
+    trendStrengthPercent: Number.isFinite(Number(features.trendStr)) ? Number(features.trendStr) : null,
+    score: Number.isFinite(Number(record?.score)) ? Number(record.score) : null,
+    scoreNote: record?.scoreNote ?? null,
+  };
+};
+
+const triggerOnDemandAnalysis = async (code, analyzeUrl, analyzeSecret) => {
+  if (!analyzeUrl || !analyzeSecret) return null;
+  const separator = analyzeUrl.includes('?') ? '&' : '?';
+  const response = await fetch(`${analyzeUrl}${separator}code=${encodeURIComponent(code)}`, {
+    headers: { 'x-stock-point-secret': analyzeSecret },
+    signal: AbortSignal.timeout(20000),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `stock-point 分析回應錯誤：HTTP ${response.status}`);
+  return body.record ? normalizeOnDemandRecord(body.record) : null;
+};
+
 export async function getStockPointHistory(rawCode) {
   const code = normalizeCode(rawCode);
-  const { siteID, token } = getConfig();
+  const { siteID, token, analyzeUrl, analyzeSecret } = getConfig();
   if (!siteID || !token) {
     const missing = [
       !siteID ? 'STOCK_POINT_SITE_ID' : null,
@@ -63,7 +93,31 @@ export async function getStockPointHistory(rawCode) {
       if (record) recordsByDate.set(entry.date, record);
     }
 
-    return { enabled: true, records: [...recordsByDate.values()] };
+    if (recordsByDate.size === 0) {
+      const analysisStore = getStore('watchlist-analysis', { siteID, token });
+      const { blobs: analysisBlobs = [] } = await analysisStore.list();
+      const matching = analysisBlobs
+        .filter((blob) => new RegExp(`^\\d{4}-\\d{2}-\\d{2}_${code}$`).test(blob.key))
+        .sort((a, b) => b.key.localeCompare(a.key));
+      if (matching[0]) {
+        const cached = await analysisStore.get(matching[0].key, { type: 'json' });
+        if (cached) recordsByDate.set(cached.date, normalizeOnDemandRecord(cached));
+      }
+    }
+
+    if (recordsByDate.size === 0) {
+      const triggered = await triggerOnDemandAnalysis(code, analyzeUrl, analyzeSecret);
+      if (triggered) return { enabled: true, triggered: true, records: [triggered] };
+    }
+
+    return {
+      enabled: true,
+      triggered: false,
+      records: [...recordsByDate.values()],
+      reason: recordsByDate.size === 0 && (!analyzeUrl || !analyzeSecret)
+        ? '尚未設定 STOCK_POINT_ANALYZE_URL 或 STOCK_POINT_ANALYZE_SECRET'
+        : undefined,
+    };
   } catch (error) {
     return { enabled: true, records: [], reason: error.message };
   }

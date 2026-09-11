@@ -13,6 +13,8 @@
 ```text
 STOCK_POINT_SITE_ID=<stock-point 的 Project ID>
 STOCK_POINT_BLOBS_TOKEN=<Netlify Personal Access Token>
+STOCK_POINT_ANALYZE_URL=https://<stock-point 網址>/api/analyze-stock
+STOCK_POINT_ANALYZE_SECRET=<與 stock-point 相同的 server-to-server secret>
 ```
 
 設定後必須重新部署，Function 才會取得新的環境變數。Token 只能設定在 Netlify server environment variables，不可放在前端或提交到 Git。
@@ -33,6 +35,17 @@ STOCK_POINT_BLOBS_TOKEN=<Netlify Personal Access Token>
 - `feat.pToMa60`：相對 MA60 乖離
 - `feat.roc10`：10 日 ROC
 - `result.aiScore`：POINT 分數
+
+## 自選股觸發分析
+
+若股票不在 `stock-point` 最近掃描結果，`tw-daytrade` 會呼叫 `STOCK_POINT_ANALYZE_URL` 觸發單股分析。`stock-point` 需要另外設定：
+
+```text
+FINMIND_TOKEN=<FinMind token>
+STOCK_POINT_ANALYZE_SECRET=<與 tw-daytrade 相同的 secret>
+```
+
+單股觸發分析會保存到 `watchlist-analysis` store，key 為 `YYYY-MM-DD_code`。單股分析可計算技術指標，但沒有完整掃描池時不會虛構 POINT 相對排名分數，因此 `score` 可能是 `null`。
 
 ## 資料處理原則
 

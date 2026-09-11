@@ -33,3 +33,8 @@ export function buildCodeToSectors(sectors = DEFAULT_SECTORS) {
 export function getSectorById(id, sectors = DEFAULT_SECTORS) {
   return sectors.find((sector) => sector.id === id) ?? null;
 }
+
+export function filterSectorsByCodes(sectors = DEFAULT_SECTORS, codes = []) {
+  const codeSet = new Set(codes);
+  return sectors.filter((sector) => sector.codes.some((code) => codeSet.has(code)));
+}

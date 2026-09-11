@@ -7,6 +7,7 @@ const isLoading = ref(true);
 const isPlaying = ref(false);
 const errorMessage = ref('');
 const selectedSector = ref(null);
+const watchlistOnly = ref(false);
 let timer = null;
 
 const currentFrame = computed(() => frames.value[frameIndex.value] ?? null);
@@ -79,7 +80,7 @@ async function loadReplay() {
   isLoading.value = true;
   errorMessage.value = '';
   try {
-    const response = await fetch('/.netlify/functions/sector-replay?days=20');
+    const response = await fetch(`/.netlify/functions/sector-replay?days=20${watchlistOnly.value ? '&watchlistOnly=1' : ''}`);
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `伺服器回應錯誤: HTTP ${response.status}`);
     frames.value = body.frames ?? [];
@@ -126,6 +127,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); });
       </div>
 
       <div class="flex flex-wrap items-center gap-2 px-4 py-3">
+        <button type="button" class="rounded border px-2 py-1 text-xs" :class="watchlistOnly ? 'border-gold bg-gold text-ink' : 'border-hairline text-mute hover:text-paper'" @click="watchlistOnly = !watchlistOnly; loadReplay()">{{ watchlistOnly ? '只看自選相關' : '全部熱門板塊' }}</button>
         <button type="button" class="rounded border border-hairline px-2 py-1 text-sm text-mute hover:text-paper" @click="step(-1)">‹</button>
         <button type="button" class="rounded border border-gold px-3 py-1 text-sm text-gold" @click="togglePlay">{{ isPlaying ? '暫停' : '播放' }}</button>
         <button type="button" class="rounded border border-hairline px-2 py-1 text-sm text-mute hover:text-paper" @click="step(1)">›</button>

@@ -1,4 +1,5 @@
 import { buildSectorFlow, buildSectorReplay } from '../lib/sector-flow.mjs';
+import { filterSectorsByCodes } from '../lib/sector-classification.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -42,6 +43,8 @@ const replay = buildSectorReplay([
 assertEqual(replay.length, 2, '回放應為每個交易日建立一個 frame');
 assertEqual(replay[1].date, '2026-09-02', '回放 frame 應依日期排序');
 assertEqual(replay[1].sectors[0].recent5NetBuyAmount, 3000, '回放應使用截至當日的滾動資金統計');
+assertEqual(filterSectorsByCodes(sectors, ['2317']).map((sector) => sector.id), ['test'], '自選股篩選應保留包含自選股的板塊');
+assertEqual(filterSectorsByCodes(sectors, ['9999']), [], '沒有自選股落在板塊時應回傳空板塊清單');
 
 console.log(`\n測試結果：${passed} 通過, ${failed} 失敗`);
 process.exit(failed > 0 ? 1 : 0);

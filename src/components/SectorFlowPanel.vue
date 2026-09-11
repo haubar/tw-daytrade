@@ -5,6 +5,7 @@ const flow = ref(null);
 const isLoading = ref(true);
 const errorMessage = ref('');
 const selectedState = ref('all');
+const watchlistOnly = ref(false);
 
 const stateLabels = {
   surge: '漲潮',
@@ -42,7 +43,7 @@ async function loadFlow() {
   isLoading.value = true;
   errorMessage.value = '';
   try {
-    const response = await fetch('/.netlify/functions/sector-flow?days=20');
+    const response = await fetch(`/.netlify/functions/sector-flow?days=20${watchlistOnly.value ? '&watchlistOnly=1' : ''}`);
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `伺服器回應錯誤: HTTP ${response.status}`);
     flow.value = body;
@@ -67,6 +68,7 @@ onMounted(loadFlow);
     </header>
 
     <div class="flex flex-wrap gap-2 border-b border-hairline px-4 py-3">
+      <button type="button" class="rounded border px-2 py-1 text-xs" :class="watchlistOnly ? 'border-gold bg-gold text-ink' : 'border-hairline text-mute hover:text-paper'" @click="watchlistOnly = !watchlistOnly; loadFlow()">{{ watchlistOnly ? '只看自選相關' : '全部熱門板塊' }}</button>
       <button
         v-for="(label, state) in { all: '全部', surge: '漲潮', rotation: '輪動', watch: '觀望', ebb: '退潮' }"
         :key="state"

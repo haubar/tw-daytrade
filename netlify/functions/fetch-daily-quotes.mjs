@@ -13,7 +13,7 @@ const TWSE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
 const TPEX_URL = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes';
 
 export async function fetchTwseQuotes() {
-  const res = await fetch(TWSE_URL);
+  const res = await fetch(TWSE_URL, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) {
     throw new Error(`TWSE API 回應錯誤: HTTP ${res.status}`);
   }
@@ -39,7 +39,7 @@ export async function fetchTpexQuotes() {
   // 部署到 Netlify（有完整網路權限）後，第一次執行若欄位對不上，
   // normalizeTpexRow 會丟出包含「原始欄位名稱」的錯誤訊息，屆時依實際欄位
   // 更新 lib/normalize.mjs 裡的 TPEX_FIELD_CANDIDATES 即可，不需要重寫邏輯。
-  const res = await fetch(TPEX_URL);
+  const res = await fetch(TPEX_URL, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) {
     throw new Error(`TPEx API 回應錯誤: HTTP ${res.status}`);
   }

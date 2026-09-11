@@ -6,7 +6,7 @@
 // toHaveScreenshot() 做截圖比對，第一次執行時建立基準圖，之後每次執行都跟基準圖比對，
 // 差異超過門檻就會讓測試失敗。
 //
-// 測試目標固定用 sampleData.js 的假資料（見 tests/visual/dashboard.spec.js 的說明），
+// 測試目標固定用 src/data/sampleScanResult.json 的假資料（見 test/visual/dashboard.spec.js 的說明），
 // 不依賴任何真實 API 或 Netlify Functions，確保畫面內容是穩定、可重現的，
 // 不會因為股價每天變動而讓截圖比對永遠失敗。
 //
@@ -19,7 +19,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './tests/visual',
+  testDir: './test/visual',
   // 截圖比對本身就是要抓「像素有沒有跑掉」，平行跑多個 worker 容易因為字型渲染時機
   // 等因素造成不必要的 flaky，這裡刻意跑單一 worker，比速度更重要的是結果穩定。
   workers: 1,

@@ -34,11 +34,11 @@ tw-daytrade-scanner/
 ├── netlify.toml                          # Netlify 設定（含排程 cron）
 ├── package.json
 ├── README.md
-├── PROGRESS.md                            # 開發階段紀錄（每階段目標／完成事項）
+├── docs/                                  # 專案規格、部署、測試與開發紀錄
 ├── src/
 │   ├── main.js
 │   ├── App.vue
-│   ├── sampleData.js
+│   ├── data/sampleScanResult.json          # 純範例資料
 │   ├── styles/
 │   │   ├── theme.css                   # Token 層：Tailwind @theme 設計 token（色彩/字體/圓角）
 │   │   └── base.css                    # Base 層：引入 theme.css + 全域基礎規則
@@ -65,9 +65,7 @@ tw-daytrade-scanner/
     ├── backfill-status.mjs                # 回填控制頁：列出缺少回測的交易日
     ├── data-source-stats.mjs              # 統計各資料源的成功／失敗比例
     ├── stock-win-rate.mjs                 # 個股歷史勝率排行
-    ├── tests/                               # 本地測試腳本（放子資料夾，避免被 Netlify 誤判成要部署的 Function）
-    │   └── _test-*.mjs                       # 不連網路，用樣本/假資料驗證邏輯
-    └── lib/
+    └── lib/                                # Function 共用邏輯
         ├── normalize.mjs                   # 資料正規化：把不同來源／格式轉成統一格式
         ├── trading-day.mjs                  # 共用交易日邏輯：判斷週末、國定假日、產生候選交易日清單
         ├── trading-calendar.mjs             # 抓取並解析 TWSE 官方交易日曆公告
@@ -80,6 +78,10 @@ tw-daytrade-scanner/
         ├── institutional.mjs                # 抓取三大法人買賣超日報
         ├── screen.mjs                      # 整合流程：串接以上模組，產生多方/空方觀察榜
         └── storage.mjs                      # Netlify Blobs 儲存層：存/讀最新結果與歷史備份
+test/
+├── functions/                              # Netlify Function 測試
+├── unit/                                   # 純函式單元測試
+└── visual/                                 # Playwright 視覺測試
 ```
 
 ## 歷史回測回填（上市市場）
@@ -219,7 +221,7 @@ https://你的站台.netlify.app/.netlify/functions/data-source-stats?days=20
 npm install
 npm run dev
 ```
-打開瀏覽器到 `http://localhost:5173`。因為還沒接上真實的 Netlify Functions（除非你另外開一個視窗跑 `netlify dev`），畫面會自動改用 `src/sampleData.js` 的範例資料，並在頂部顯示「範例資料」的提示條，不會誤導你以為是真實行情。
+打開瀏覽器到 `http://localhost:5173`。因為還沒接上真實的 Netlify Functions（除非你另外開一個視窗跑 `netlify dev`），畫面會自動改用 `src/data/sampleScanResult.json` 的範例資料，並在頂部顯示「範例資料」的提示條，不會誤導你以為是真實行情。
 
 **驗證方式**：前端這層沒辦法像後端邏輯一樣寫單元測試（是視覺呈現，不是計算邏輯），改用 `npm run build` 確認整個 Vue + Tailwind 專案能正確編譯，並檢查編譯後的 CSS 確實包含 `@theme` 產生的工具類別（例如 `.text-surge`），確認 token 系統真的有生效，以及本機啟動 dev server 確認每個元件模組都能被正確載入，不會有匯入錯誤或編譯期錯誤。實際畫面好不好看，還是需要你自己打開瀏覽器看一眼——我這邊的環境沒有瀏覽器可以截圖給你確認。
 
@@ -290,11 +292,11 @@ npm run test:visual
 npm run test:visual:ui
 ```
 
-測試內容固定用 `sampleData.js` 的假資料（`tests/visual/dashboard.spec.js` 起 `vite preview` 的靜態伺服器，沒有 Netlify Functions，前端會自動退回範例資料），畫面內容穩定、不受今天股價影響，截圖比對才有意義。涵蓋：預設畫面、篩選面板互動後的畫面、單一觀察榜卡片的徽章特寫、手機版排版。
+測試內容固定用 `sampleScanResult.json` 的假資料（`test/visual/dashboard.spec.js` 起 `vite preview` 的靜態伺服器，沒有 Netlify Functions，前端會自動退回範例資料），畫面內容穩定、不受今天股價影響，截圖比對才有意義。涵蓋：預設畫面、篩選面板互動後的畫面、單一觀察榜卡片的徽章特寫、手機版排版。
 
-基準截圖（`tests/visual/**/*-snapshots/`）需要進版控，這樣其他人 clone 下來執行 `npm run test:visual` 才有東西可以比對；`.gitignore` 已經排除掉執行過程的暫存產物（`test-results/`、`playwright-report/`），只有基準圖本身會進版控。
+基準截圖（`test/visual/**/*-snapshots/`）需要進版控，這樣其他人 clone 下來執行 `npm run test:visual` 才有東西可以比對；`.gitignore` 已經排除掉執行過程的暫存產物（`test-results/`、`playwright-report/`），只有基準圖本身會進版控。
 
-**已知限制**：這份程式碼是在一個網路白名單受限的容器環境裡寫的，沒辦法下載 Playwright 的瀏覽器執行檔（`cdn.playwright.dev` 不在允許清單），所以設定檔跟測試案例本身雖然已經寫好、邏輯確認沒問題，但**基準截圖還沒有真的產生過**，需要你在本機或 CI（例如 GitHub Actions，那邊網路沒有限制）執行一次 `npm run test:visual:update` 才會有基準圖可以比對。**第一次產生基準圖之後，務必人工打開 `tests/visual/**/*-snapshots/` 裡的圖檔看過一次**，確認畫面真的長得對，而不是無條件相信它——截圖比對只能抓「跟基準圖不一樣」，沒辦法幫你判斷「基準圖本身有沒有問題」。
+**已知限制**：這份程式碼是在一個網路白名單受限的容器環境裡寫的，沒辦法下載 Playwright 的瀏覽器執行檔（`cdn.playwright.dev` 不在允許清單），所以設定檔跟測試案例本身雖然已經寫好、邏輯確認沒問題，但**基準截圖還沒有真的產生過**，需要你在本機或 CI（例如 GitHub Actions，那邊網路沒有限制）執行一次 `npm run test:visual:update` 才會有基準圖可以比對。**第一次產生基準圖之後，務必人工打開 `test/visual/**/*-snapshots/` 裡的圖檔看過一次**，確認畫面真的長得對，而不是無條件相信它——截圖比對只能抓「跟基準圖不一樣」，沒辦法幫你判斷「基準圖本身有沒有問題」。
 
 ## 跟 stock_view 的整合
 
@@ -316,7 +318,7 @@ npm run test:visual:ui
 - **TPEx（上櫃）欄位驗證進度**：欄位名稱本身有猜對（沒有拋出「欄位對應失敗」的例外），但部署後發現一個資料品質問題——`tpex_mainboard_daily_close_quotes` 回傳的清單混雜了大量權證（Warrant），導致「4644 檔」這種遠高於真實上櫃股票數（約 800 檔）的異常結果。**根因已找到並修正**（見 PROGRESS.md 階段 32）：已加入 `isWarrant` 過濾（見 `normalize.mjs`，依代碼位數＋名稱關鍵字判斷），TWSE／TPEx 兩邊抓取都套用。過濾後的實際檔數仍待下一次部署確認是否落回合理範圍。
 - **上櫃法人資料（FinMind）尚未經過真實請求驗證**：程式碼是照官方文件格式撰寫的，見上方「上櫃法人因子的兩階段設計」說明。只對「第一輪觀察榜裡的上櫃股票」查詢，不是全市場——如果一檔上櫃股票沒有進第一輪觀察榜的前段，它的法人因子會維持中性值，不會被 FinMind 補強。先前上櫃候選數量一直是 0，已排查出根因是「權證污染候選池」（見上一項、PROGRESS.md 階段 32），過濾修正後**尚待重新部署驗證**是否真的能查到有效的法人資料。
 - **免費 API 無官方使用授權**：抓取頻率過高可能被限流，設計上以「盤後跑一次」為主，避免高頻呼叫。
-- **部署前置需求（階段 33 已清理，push 前務必確認）**：`netlify/functions/` 頂層過去曾殘留重複的測試檔案（含一個帶 top-level await 的孤兒檔案），會導致 Netlify build 失敗（`Top-level await is currently not supported with the "cjs" output format`）。目前頂層只放真正要部署的 Function（包含 `scan.mjs`、`backfill-*`、`latest.mjs`、`history-index.mjs`、`data-source-stats.mjs`、`stock-win-rate.mjs`、`sync-trading-calendar.mjs` 等）與 `lib/`／`tests/` 子資料夾；測試腳本一律放在 `netlify/functions/tests/`，不可放在頂層。
+- **部署前置需求**：`netlify/functions/` 頂層只放真正要部署的 Function 與 `lib/`；測試腳本集中在 `test/functions/`，不可放回 Function 目錄，以免被 Netlify 誤判成要部署的 Function。
 
 ## 新手教學
 

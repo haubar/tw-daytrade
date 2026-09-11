@@ -33,7 +33,7 @@ function createFakeStore() {
 const store = createFakeStore();
 const fixedNow = () => '2026-09-11T10:00:00.000Z';
 await saveInstitutionalSnapshot('2026-09-10', [
-  { code: '2330', market: 'TWSE', source: 'TWSE-T86', netBuyShares: 1000 },
+  { code: '2330', name: '台積電', close: 1000, market: 'TWSE', source: 'TWSE-T86', netBuyShares: 1000 },
   { code: '6488', market: 'TPEx', source: 'FinMind', netBuyShares: -200 },
   { code: '999', netBuyShares: 'not-a-number' },
 ], { coverage: { twse: 1, tpex: 1, tpexIsCandidateOnly: true } }, store, fixedNow);
@@ -42,6 +42,8 @@ const snapshot = await getInstitutionalSnapshot('2026-09-10', store);
 assertEqual(snapshot.records.length, 2, '快照只應保存合法且實際存在的法人紀錄');
 assertEqual(snapshot.records[0].code, '2330', '法人快照應依股票代碼排序');
 assertEqual(snapshot.records[1].source, 'FinMind', '法人快照應保存資料來源');
+assertEqual(snapshot.records[0].close, 1000, '法人快照應保存收盤價供金額換算');
+assertEqual(snapshot.records[0].name, '台積電', '法人快照應保存股票名稱');
 assertEqual(snapshot.coverage.tpexIsCandidateOnly, true, '法人快照應保存涵蓋範圍限制');
 
 await saveInstitutionalSnapshot('2026-09-11', [{ code: '2330', netBuyShares: 2000 }], {}, store, fixedNow);

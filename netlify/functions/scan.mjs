@@ -298,9 +298,24 @@ export default async (req) => {
       } else if (institutionalNetBuy.size === 0 && tpexInstitutionalNetBuy.size === 0) {
         institutionalArchiveWarning = '本次沒有任何可用法人資料，未建立空白快照';
       } else {
+        const quoteByCode = new Map(todayQuotes.map((quote) => [quote.code, quote]));
         const records = [
-          ...[...institutionalNetBuy.entries()].map(([code, netBuyShares]) => ({ code, netBuyShares, market: 'TWSE', source: 'TWSE-T86' })),
-          ...[...tpexInstitutionalNetBuy.entries()].map(([code, netBuyShares]) => ({ code, netBuyShares, market: 'TPEx', source: 'FinMind' })),
+          ...[...institutionalNetBuy.entries()].map(([code, netBuyShares]) => ({
+            code,
+            name: quoteByCode.get(code)?.name,
+            close: quoteByCode.get(code)?.close,
+            netBuyShares,
+            market: 'TWSE',
+            source: 'TWSE-T86',
+          })),
+          ...[...tpexInstitutionalNetBuy.entries()].map(([code, netBuyShares]) => ({
+            code,
+            name: quoteByCode.get(code)?.name,
+            close: quoteByCode.get(code)?.close,
+            netBuyShares,
+            market: 'TPEx',
+            source: 'FinMind',
+          })),
         ];
         await saveInstitutionalSnapshot(todayDateStr, records, {
           coverage: {

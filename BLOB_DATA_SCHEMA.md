@@ -124,9 +124,11 @@
   records: [
     {
       code: "2330",
+      name: "台積電",
       market: "TWSE",
       source: "TWSE-T86",
-      netBuyShares: 123456
+      netBuyShares: 123456,
+      close: 1000
     }
   ]
 }
@@ -145,9 +147,11 @@
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
 | `code` | string | 股票代碼，快照內唯一 |
+| `name` | string / null | 當日行情可辨識時保存股票名稱 |
 | `market` | `TWSE` / `TPEx` | 市場 |
 | `source` | string | 例如 `TWSE-T86`、`FinMind` |
 | `netBuyShares` | number | 三大法人買賣超股數，正數為買超、負數為賣超 |
+| `close` | number / null | 當日收盤價，用於估算法人買賣超金額；缺資料不填 0 |
 
 ### `index`
 

@@ -34,9 +34,11 @@ function normalizeRecords(records) {
     if (!/^\d{4,6}$/.test(code) || !Number.isFinite(netBuyShares)) continue;
     unique.set(code, {
       code,
+      name: String(record?.name ?? '').trim() || null,
       market: record?.market === 'TPEx' ? 'TPEx' : 'TWSE',
       source: String(record?.source ?? 'unknown'),
       netBuyShares,
+      close: Number.isFinite(Number(record?.close)) ? Number(record.close) : null,
     });
   }
 

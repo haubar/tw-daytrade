@@ -61,27 +61,31 @@ const addItem = async () => {
   }
 }
 
-let searchTimer;
 const searchStockOptions = async () => {
-  clearTimeout(searchTimer);
   selectedStock.value = null;
   searchError.value = '';
   searchResults.value = [];
   const query = searchInput.value.trim();
   if (!query) return;
+  if (query.length < 2 && !/^\d{4,6}$/.test(query)) {
+    searchError.value = '請至少輸入 2 個字，或輸入完整 4～6 碼股號。';
+    return;
+  }
 
-  searchTimer = setTimeout(async () => {
-    searchLoading.value = true;
-    try {
-      const body = await searchStocks(query);
-      searchResults.value = body.items ?? [];
-      if (searchResults.value.length === 0) searchError.value = '找不到符合的股票，請改用股號或完整／部分名稱搜尋。';
-    } catch (error) {
-      searchError.value = error.message;
-    } finally {
-      searchLoading.value = false;
+  searchLoading.value = true;
+  try {
+    const body = await searchStocks(query);
+    searchResults.value = body.items ?? [];
+    if (searchResults.value.length === 0) {
+      searchError.value = body.sourceErrors?.length
+        ? `部分行情來源無法讀取：${body.sourceErrors.join('；')}`
+        : '找不到符合的股票，請改用股號或完整／部分名稱搜尋。';
     }
-  }, 350);
+  } catch (error) {
+    searchError.value = error.message;
+  } finally {
+    searchLoading.value = false;
+  }
 }
 
 const selectStock = (stock) => {
@@ -148,7 +152,12 @@ onMounted(loadWatchlist);
     <div class="border-b border-hairline p-4">
       <label class="flex flex-col gap-1 text-[0.72rem] text-mute">
         搜尋股票名稱或股號
-        <input v-model="searchInput" class="rounded border border-hairline bg-ink px-2 py-2 text-paper" placeholder="例如 2330、台積電" autocomplete="off" @input="searchStockOptions" @keyup.enter="searchResults[0] && selectStock(searchResults[0])">
+        <div class="flex gap-2">
+          <input v-model="searchInput" class="min-w-0 flex-1 rounded border border-hairline bg-ink px-2 py-2 text-paper" placeholder="例如 2330、台積電" autocomplete="off" @keyup.enter="searchStockOptions">
+          <button type="button" class="rounded border border-gold px-3 py-2 text-sm text-gold hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-50" :disabled="searchLoading" @click="searchStockOptions">
+            {{ searchLoading ? '搜尋中…' : '搜尋' }}
+          </button>
+        </div>
       </label>
 
       <p v-if="searchLoading" class="m-0 mt-2 text-xs text-mute">正在查詢 TWSE／TPEx 最新行情…</p>

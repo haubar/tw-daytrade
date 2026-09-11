@@ -24,6 +24,7 @@ const quotes = [
 
 assertEqual(searchQuotes(quotes, '2330').map((item) => item.code), ['2330'], '應可用完整股號搜尋');
 assertEqual(searchQuotes(quotes, '台積').map((item) => item.code), ['2330'], '應可用部分名稱搜尋');
+assertEqual(searchQuotes(quotes, ' 台 積 ').map((item) => item.code), ['2330'], '搜尋文字應忽略空白');
 assertEqual(searchQuotes(quotes, 'twse').map((item) => item.code), [], '不應用市場名稱誤配股票');
 assertEqual(searchQuotes(quotes, '').length, 0, '空搜尋字串應回傳空結果');
 assertEqual(searchQuotes(quotes, '23').map((item) => item.code), ['2303', '2330'], '股號前綴應可搜尋並排序');

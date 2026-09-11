@@ -1,5 +1,5 @@
 const normalizeText = (value) => {
-  return String(value ?? '').trim().toUpperCase();
+  return String(value ?? '').trim().toUpperCase().replace(/\s+/g, '');
 }
 
 /**

@@ -12,7 +12,7 @@ const TWSE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
 // TPEx 端點待實際部署後確認確切路徑與欄位（見下方 fetchTpexQuotes 註解）
 const TPEX_URL = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes';
 
-async function fetchTwseQuotes() {
+export async function fetchTwseQuotes() {
   const res = await fetch(TWSE_URL);
   if (!res.ok) {
     throw new Error(`TWSE API 回應錯誤: HTTP ${res.status}`);
@@ -34,7 +34,7 @@ async function fetchTwseQuotes() {
   return { normalized, errors, warrantCount };
 }
 
-async function fetchTpexQuotes() {
+export async function fetchTpexQuotes() {
   // 注意：這個網域在我方測試環境有防爬蟲機制擋下請求，實際欄位名稱未能於此驗證。
   // 部署到 Netlify（有完整網路權限）後，第一次執行若欄位對不上，
   // normalizeTpexRow 會丟出包含「原始欄位名稱」的錯誤訊息，屆時依實際欄位

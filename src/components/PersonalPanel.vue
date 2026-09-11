@@ -7,6 +7,7 @@ import {
   fetchSharedWatchlist,
   fetchStockDetail,
   removeSharedWatchlistItem,
+  searchStocks,
 } from '../services/api.js';
 
 const items = ref([]);
@@ -14,9 +15,11 @@ const audit = ref([]);
 const isLoading = ref(true);
 const isSaving = ref(false);
 const errorMessage = ref('');
-const codeInput = ref('');
-const nameInput = ref('');
-const marketInput = ref('TWSE');
+const searchInput = ref('');
+const searchResults = ref([]);
+const selectedStock = ref(null);
+const searchLoading = ref(false);
+const searchError = ref('');
 const filterInput = ref('');
 const detail = ref(null);
 const detailLoading = ref(false);
@@ -46,23 +49,53 @@ async function loadWatchlist() {
 }
 
 async function addItem() {
-  const code = codeInput.value.trim();
-  if (!code) {
-    errorMessage.value = '請輸入股票代碼';
+  if (!selectedStock.value) {
+    errorMessage.value = '請先搜尋並選擇一檔已確認存在的股票';
     return;
   }
 
   isSaving.value = true;
   errorMessage.value = '';
   try {
-    applyWatchlist(await addSharedWatchlistItem({ code, name: nameInput.value.trim(), market: marketInput.value }));
-    codeInput.value = '';
-    nameInput.value = '';
+    applyWatchlist(await addSharedWatchlistItem(selectedStock.value));
+    searchInput.value = '';
+    searchResults.value = [];
+    selectedStock.value = null;
   } catch (error) {
     errorMessage.value = error.message;
   } finally {
     isSaving.value = false;
   }
+}
+
+let searchTimer;
+async function searchStockOptions() {
+  clearTimeout(searchTimer);
+  selectedStock.value = null;
+  searchError.value = '';
+  searchResults.value = [];
+  const query = searchInput.value.trim();
+  if (!query) return;
+
+  searchTimer = setTimeout(async () => {
+    searchLoading.value = true;
+    try {
+      const body = await searchStocks(query);
+      searchResults.value = body.items ?? [];
+      if (searchResults.value.length === 0) searchError.value = '找不到符合的股票，請改用股號或完整／部分名稱搜尋。';
+    } catch (error) {
+      searchError.value = error.message;
+    } finally {
+      searchLoading.value = false;
+    }
+  }, 350);
+}
+
+function selectStock(stock) {
+  selectedStock.value = stock;
+  searchInput.value = `${stock.code} ${stock.name}`;
+  searchResults.value = [];
+  searchError.value = '';
 }
 
 async function removeItem(item) {
@@ -119,25 +152,30 @@ onMounted(loadWatchlist);
       <span class="font-mono text-[0.85rem] text-mute">{{ items.length }} 檔</span>
     </header>
 
-    <div class="grid gap-2 border-b border-hairline p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+    <div class="border-b border-hairline p-4">
       <label class="flex flex-col gap-1 text-[0.72rem] text-mute">
-        股票代碼
-        <input v-model="codeInput" class="rounded border border-hairline bg-ink px-2 py-2 font-mono text-paper" placeholder="例如 2330" @keyup.enter="addItem">
+        搜尋股票名稱或股號
+        <input v-model="searchInput" class="rounded border border-hairline bg-ink px-2 py-2 text-paper" placeholder="例如 2330、台積電" autocomplete="off" @input="searchStockOptions" @keyup.enter="searchResults[0] && selectStock(searchResults[0])">
       </label>
-      <label class="flex flex-col gap-1 text-[0.72rem] text-mute">
-        名稱（可選）
-        <input v-model="nameInput" class="rounded border border-hairline bg-ink px-2 py-2 text-paper" placeholder="例如 台積電" @keyup.enter="addItem">
-      </label>
-      <label class="flex flex-col gap-1 text-[0.72rem] text-mute">
-        市場
-        <select v-model="marketInput" class="rounded border border-hairline bg-ink px-2 py-2 text-paper">
-          <option value="TWSE">上市</option>
-          <option value="TPEx">上櫃</option>
-        </select>
-      </label>
-      <button type="button" class="self-end rounded bg-gold px-3 py-2 text-sm font-bold text-ink disabled:cursor-not-allowed disabled:opacity-50" :disabled="isSaving" @click="addItem">
+
+      <p v-if="searchLoading" class="m-0 mt-2 text-xs text-mute">正在查詢 TWSE／TPEx 最新行情…</p>
+      <p v-if="searchError" class="m-0 mt-2 text-xs text-ebb">{{ searchError }}</p>
+
+      <ul v-if="searchResults.length" class="m-0 mt-2 list-none overflow-hidden rounded border border-hairline bg-ink p-0">
+        <li v-for="stock in searchResults" :key="`${stock.market}-${stock.code}`">
+          <button type="button" class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-panel-raised" @click="selectStock(stock)">
+            <span><span class="font-mono text-mute">{{ stock.code }}</span> <span class="text-paper">{{ stock.name }}</span></span>
+            <span class="text-xs text-mute">{{ stock.market === 'TPEx' ? '上櫃' : '上市' }}</span>
+          </button>
+        </li>
+      </ul>
+
+      <div v-if="selectedStock" class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-gold/30 bg-gold/10 px-3 py-2 text-sm">
+        <span>已選擇：<strong>{{ selectedStock.name }}</strong> <span class="font-mono text-mute">{{ selectedStock.code }}</span></span>
+        <button type="button" class="rounded bg-gold px-3 py-2 text-sm font-bold text-ink disabled:cursor-not-allowed disabled:opacity-50" :disabled="isSaving" @click="addItem">
         {{ isSaving ? '處理中…' : '加入自選' }}
-      </button>
+        </button>
+      </div>
     </div>
 
     <div class="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-3">

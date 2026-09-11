@@ -15,6 +15,10 @@ export function fetchSharedWatchlist() {
   return requestJson('/.netlify/functions/shared-watchlist');
 }
 
+export function searchStocks(query) {
+  return requestJson(`/.netlify/functions/stock-search?q=${encodeURIComponent(query)}`);
+}
+
 export function addSharedWatchlistItem(item) {
   return requestJson('/.netlify/functions/shared-watchlist', {
     method: 'POST',

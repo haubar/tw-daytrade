@@ -115,7 +115,10 @@ export async function getStockPointHistory(rawCode) {
       triggered: false,
       records: [...recordsByDate.values()],
       reason: recordsByDate.size === 0 && (!analyzeUrl || !analyzeSecret)
-        ? '尚未設定 STOCK_POINT_ANALYZE_URL 或 STOCK_POINT_ANALYZE_SECRET'
+        ? `尚未設定：${[
+            !analyzeUrl ? 'STOCK_POINT_ANALYZE_URL' : null,
+            !analyzeSecret ? 'STOCK_POINT_ANALYZE_SECRET' : null,
+          ].filter(Boolean).join('、')}`
         : undefined,
     };
   } catch (error) {

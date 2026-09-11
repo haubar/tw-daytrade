@@ -41,6 +41,7 @@ export const parseStockPointScanKey = parseScanKey;
 const normalizeOnDemandRecord = (record) => {
   const features = record?.features ?? {};
   return {
+    analysisVersion: record?.analysisVersion ?? 1,
     date: record?.date ?? null,
     market: null,
     close: Number.isFinite(Number(features.cur)) ? Number(features.cur) : null,
@@ -49,7 +50,7 @@ const normalizeOnDemandRecord = (record) => {
     priceToMa60Percent: Number.isFinite(Number(features.pToMa60)) ? Number(features.pToMa60) : null,
     roc10Percent: Number.isFinite(Number(features.roc10)) ? Number(features.roc10) : null,
     trendStrengthPercent: Number.isFinite(Number(features.trendStr)) ? Number(features.trendStr) : null,
-    score: Number.isFinite(Number(record?.score)) ? Number(record.score) : null,
+    score: record?.score != null && Number.isFinite(Number(record.score)) ? Number(record.score) : null,
     scoreNote: record?.scoreNote ?? null,
   };
 };
@@ -81,7 +82,7 @@ export async function getStockPointHistory(rawCode) {
     const localStore = getStore(LOCAL_TRIGGER_STORE_NAME);
     const today = new Date().toISOString().slice(0, 10);
     const localCached = await localStore.get(`${today}_${code}`, { type: 'json', consistency: 'strong' });
-    if (localCached && localCached.score != null) return { enabled: true, triggered: false, records: [localCached] };
+    if (localCached?.analysisVersion === 2) return { enabled: true, triggered: false, records: [localCached] };
 
     const store = getStore(STORE_NAME, { siteID, token });
     const { blobs = [] } = await store.list();

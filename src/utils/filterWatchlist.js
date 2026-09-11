@@ -27,7 +27,7 @@ export const PRICE_LIMIT_THRESHOLD_PERCENT = 9.5;
  * @param {number} changePercent
  * @returns {boolean}
  */
-export function isPriceLimitLocked(changePercent) {
+export const isPriceLimitLocked = (changePercent) => {
   return Math.abs(changePercent) >= PRICE_LIMIT_THRESHOLD_PERCENT;
 }
 
@@ -50,19 +50,19 @@ export const PRICE_BANDS = [
  * 取得股價所屬的操作參考價格帶。500 元以上另提供篩選選項，但因未指定
  * 獲利跳檔數，不顯示獲利價差提示；千元股由 filterWatchlist 固定排除。
  */
-export function getPriceBand(price) {
+export const getPriceBand = (price) => {
   if (!Number.isFinite(price) || price < 0 || price >= HIGH_PRICE_STOCK_LIMIT) return null;
   return PRICE_BANDS.find((band, index) => price >= band.min && price <= getPriceBandUpperBound(index)) ?? null;
 }
 
 // 原始分段之間有 0.5 元等正常台股跳動價格（例如 74.5、37.5）。上個價格帶的
 // 起點視為本帶的實際上界，讓這類股票不會意外落在任何一帶之外。
-export function getPriceBandUpperBound(index) {
+export const getPriceBandUpperBound = (index) => {
   return index === 0 ? PRICE_BANDS[0].max : PRICE_BANDS[index - 1].min;
 }
 
 /** 台股普通股票的報價檔距（ETF、權證等商品的規則可能不同）。 */
-export function getStockTickSize(price) {
+export const getStockTickSize = (price) => {
   if (price < 10) return 0.01;
   if (price < 50) return 0.05;
   if (price < 100) return 0.1;
@@ -71,7 +71,7 @@ export function getStockTickSize(price) {
 }
 
 /** 往上跳指定檔數後的價差；跨過價格級距時會套用下一檔的正確檔距。 */
-export function getPriceMoveForTicks(price, ticks) {
+export const getPriceMoveForTicks = (price, ticks) => {
   if (!Number.isFinite(price) || !Number.isInteger(ticks) || ticks < 0) return null;
   let target = price;
   for (let i = 0; i < ticks; i += 1) {
@@ -100,7 +100,7 @@ export function getPriceMoveForTicks(price, ticks) {
  * @param {WatchlistFilters} filters
  * @returns {Array}
  */
-export function filterWatchlist(items, filters) {
+export const filterWatchlist = (items, filters) => {
   const { minPrice, maxPrice, minVolume, minGainPercent, hideDayTradeIneligible } = filters ?? {};
 
   return items.filter((item) => {
@@ -121,7 +121,7 @@ export function filterWatchlist(items, filters) {
  * @param {WatchlistFilters} filters
  * @returns {boolean}
  */
-export function isFilterActive(filters) {
+export const isFilterActive = (filters) => {
   if (!filters) return false;
   return (
     [filters.minPrice, filters.maxPrice, filters.minVolume, filters.minGainPercent].some(

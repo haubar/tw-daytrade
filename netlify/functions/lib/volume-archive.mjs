@@ -24,11 +24,11 @@ const MAX_ARCHIVED_DAYS = 15; // 保留最近 15 個交易日，避免 Blobs 裡
 // 只有一個地方需要改。
 export const DEFAULT_HISTORY_WINDOW_DAYS = 10;
 
-function defaultStore() {
+const defaultStore = () => {
   return getStore(STORE_NAME);
 }
 
-function snapshotKey(dateStr) {
+const snapshotKey = (dateStr) => {
   return `snapshot:${dateStr}`;
 }
 

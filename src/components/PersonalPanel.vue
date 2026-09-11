@@ -31,12 +31,12 @@ const filteredItems = computed(() => {
   return items.value.filter((item) => `${item.code} ${item.name}`.toLowerCase().includes(keyword));
 });
 
-function applyWatchlist(body) {
+const applyWatchlist = (body) => {
   items.value = Array.isArray(body.items) ? body.items : [];
   audit.value = Array.isArray(body.audit) ? body.audit : [];
 }
 
-async function loadWatchlist() {
+const loadWatchlist = async () => {
   isLoading.value = true;
   errorMessage.value = '';
   try {
@@ -48,7 +48,7 @@ async function loadWatchlist() {
   }
 }
 
-async function addItem() {
+const addItem = async () => {
   if (!selectedStock.value) {
     errorMessage.value = '請先搜尋並選擇一檔已確認存在的股票';
     return;
@@ -69,7 +69,7 @@ async function addItem() {
 }
 
 let searchTimer;
-async function searchStockOptions() {
+const searchStockOptions = async () => {
   clearTimeout(searchTimer);
   selectedStock.value = null;
   searchError.value = '';
@@ -91,14 +91,14 @@ async function searchStockOptions() {
   }, 350);
 }
 
-function selectStock(stock) {
+const selectStock = (stock) => {
   selectedStock.value = stock;
   searchInput.value = `${stock.code} ${stock.name}`;
   searchResults.value = [];
   searchError.value = '';
 }
 
-async function removeItem(item) {
+const removeItem = async (item) => {
   if (!window.confirm(`確定要從共用自選股移除 ${item.name}（${item.code}）嗎？這會影響所有使用者。`)) return;
 
   isSaving.value = true;
@@ -112,19 +112,19 @@ async function removeItem(item) {
   }
 }
 
-function displayPercent(value) {
+const displayPercent = (value) => {
   return value == null ? '—' : formatPercent(value);
 }
 
-function displayPrice(value) {
+const displayPrice = (value) => {
   return value == null ? '—' : formatPrice(value);
 }
 
-function displayVolume(value) {
+const displayVolume = (value) => {
   return value == null ? '—' : formatVolume(value);
 }
 
-async function openDetail(item) {
+const openDetail = async (item) => {
   detailLoading.value = true;
   detailError.value = '';
   try {

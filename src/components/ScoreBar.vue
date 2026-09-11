@@ -17,7 +17,7 @@ defineProps({
 // 用這個當作長條的滿版基準，這樣不同股票之間的長條長度可以直接比較「總分高低」。
 const MAX_SCORE = 100;
 
-function pct(value) {
+const pct = (value) => {
   return `${Math.max(0, Math.min(100, (value / MAX_SCORE) * 100))}%`;
 }
 </script>

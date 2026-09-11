@@ -16,7 +16,7 @@ import { buildStockStats, rankStocksByWinRate } from './lib/stock-win-rate.mjs';
 
 const VALID_STRATEGIES = new Set(['base', 'adv', 'shortBase', 'shortAdv']);
 
-function clampInt(raw, fallback, min, max) {
+const clampInt = (raw, fallback, min, max) => {
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(Math.max(n, min), max);

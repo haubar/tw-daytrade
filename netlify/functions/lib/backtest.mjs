@@ -8,15 +8,15 @@ export const DEFAULT_COMMISSION_RATE = 0.001425;
 export const DEFAULT_DAY_TRADE_TAX_RATE = 0.0015;
 export const DEFAULT_SLIPPAGE_RATE = 0;
 
-function validPrice(value) {
+const validPrice = (value) => {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
-function average(trades, field) {
+const average = (trades, field) => {
   return trades.length === 0 ? null : trades.reduce((sum, trade) => sum + trade[field], 0) / trades.length;
 }
 
-function summarizeTrades(trades, selectedCount) {
+const summarizeTrades = (trades, selectedCount) => {
   const wins = trades.filter((t) => t.netReturnPercent > 0);
   const losses = trades.filter((t) => t.netReturnPercent < 0);
   const grossProfit = wins.reduce((s, t) => s + t.netReturnPercent, 0);
@@ -31,11 +31,11 @@ function summarizeTrades(trades, selectedCount) {
   };
 }
 
-function longFill(price, slippageRate, isEntry) {
+const longFill = (price, slippageRate, isEntry) => {
   return price * (isEntry ? 1 + slippageRate : 1 - slippageRate);
 }
 
-function shortFill(price, slippageRate, isEntry) {
+const shortFill = (price, slippageRate, isEntry) => {
   return price * (isEntry ? 1 - slippageRate : 1 + slippageRate);
 }
 

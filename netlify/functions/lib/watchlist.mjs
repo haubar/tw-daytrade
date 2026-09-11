@@ -10,24 +10,24 @@ export const WATCHLIST_KEY = 'current';
 export const WATCHLIST_SCHEMA_VERSION = 1;
 export const MAX_AUDIT_ENTRIES = 500;
 
-function defaultStore() {
+const defaultStore = () => {
   return getStore(WATCHLIST_STORE_NAME);
 }
 
-function nowIso() {
+const nowIso = () => {
   return new Date().toISOString();
 }
 
-function normalizeCode(value) {
+const normalizeCode = (value) => {
   return String(value ?? '').trim().toUpperCase();
 }
 
-function normalizeName(value, code) {
+const normalizeName = (value, code) => {
   const name = String(value ?? '').trim();
   return name || code;
 }
 
-function normalizeMarket(value) {
+const normalizeMarket = (value) => {
   return value === 'TPEx' ? 'TPEx' : 'TWSE';
 }
 
@@ -81,7 +81,7 @@ export async function getSharedWatchlist(store = defaultStore()) {
   return normalizeWatchlist(value ?? emptyWatchlist());
 }
 
-async function saveSharedWatchlist(value, store) {
+const saveSharedWatchlist = async (value, store) => {
   const normalized = normalizeWatchlist(value);
   normalized.updatedAt = nowIso();
   await store.setJSON(WATCHLIST_KEY, normalized);

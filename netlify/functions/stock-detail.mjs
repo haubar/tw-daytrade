@@ -2,25 +2,19 @@ import { getBacktestIndex, getBacktestResultByDate } from './lib/backtest-storag
 import { getLatestScan } from './lib/storage.mjs';
 import { getSharedWatchlist } from './lib/watchlist.mjs';
 import { buildStockDetail } from './lib/stock-detail.mjs';
+import { errorResponse, jsonResponse } from './lib/http.mjs';
 
-function json(value, status = 200) {
-  return new Response(JSON.stringify(value, null, 2), {
-    status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
-  });
-}
-
-function clampInt(raw, fallback, min, max) {
+const clampInt = (raw, fallback, min, max) => {
   const value = Number.parseInt(raw, 10);
   if (!Number.isFinite(value)) return fallback;
   return Math.min(Math.max(value, min), max);
-}
+};
 
 export default async (req) => {
   try {
     const url = new URL(req.url);
     const code = String(url.searchParams.get('code') ?? '').trim().toUpperCase();
-    if (!/^\d{4,6}$/.test(code)) return json({ error: '請提供 4 到 6 碼股票代碼' }, 400);
+    if (!/^\d{4,6}$/.test(code)) return jsonResponse({ error: '請提供 4 到 6 碼股票代碼' }, 400);
 
     const days = clampInt(url.searchParams.get('days'), 60, 1, 260);
     const [latestScan, sharedWatchlist, index] = await Promise.all([
@@ -32,7 +26,7 @@ export default async (req) => {
     const results = await Promise.all(dates.map((date) => getBacktestResultByDate(date)));
     const sharedItem = sharedWatchlist.items.find((item) => item.code === code) ?? null;
 
-    return json(buildStockDetail({
+    return jsonResponse(buildStockDetail({
       code,
       latestScan,
       sharedItem,
@@ -40,6 +34,6 @@ export default async (req) => {
       daysRequested: days,
     }));
   } catch (error) {
-    return json({ error: error.message || '個股資料讀取失敗' }, 500);
+    return errorResponse(error);
   }
 };

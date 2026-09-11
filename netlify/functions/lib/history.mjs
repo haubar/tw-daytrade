@@ -32,7 +32,7 @@ const HISTORY_URL_BASE = 'https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX';
  * @param {string} colorHtml
  * @returns {1 | -1}
  */
-function parseChangeSign(colorHtml) {
+const parseChangeSign = (colorHtml) => {
   if (typeof colorHtml !== 'string') return 1;
   if (colorHtml.includes('color:green')) return -1;
   if (colorHtml.includes('color:red')) return 1;

@@ -44,7 +44,7 @@ const filterActive = computed(() => isFilterActive(filters));
 // null >= 0 在 JS 裡會被當成 0 >= 0 判斷成 true，如果直接拿這個條件式決定顏色，
 // 沒有交易的情況會被誤標成綠色（賺錢），這是會誤導使用者的顯示錯誤，
 // 所以要先明確排除 null／undefined 的情況，給一個中性色，不能讓它落入紅或綠。
-function netReturnColorClass(value) {
+const netReturnColorClass = (value) => {
   if (value === null || value === undefined || Number.isNaN(value)) return 'text-mute';
   return value >= 0 ? 'text-surge' : 'text-ebb';
 }
@@ -61,7 +61,7 @@ const backtestSkipSummary = computed(() => {
   return `共 ${skipped.length} 檔被跳過，原因不只一種，詳見 API 回應的 skipped 欄位。`;
 });
 
-async function loadData() {
+const loadData = async () => {
   isLoading.value = true;
   loadError.value = null;
 
@@ -92,7 +92,7 @@ onMounted(loadData);
 // 按任一方向鍵叫出「歷史資料列表」面板（見 HistoryPanel.vue）。用全域監聽器而不是綁在
 // 某個特定元件上，是因為使用者不需要先點擊任何東西、隨時按方向鍵都應該有反應——
 // 這是刻意設計成不明顯的隱藏功能，不放進一般可見的 UI 按鈕。
-function handleGlobalKeydown(e) {
+const handleGlobalKeydown = (e) => {
   historyPanelRef.value?.handleKeydown(e);
 }
 onMounted(() => window.addEventListener('keydown', handleGlobalKeydown));

@@ -1,4 +1,4 @@
-function normalizeText(value) {
+const normalizeText = (value) => {
   return String(value ?? '').trim().toUpperCase();
 }
 

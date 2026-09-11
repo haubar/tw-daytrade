@@ -48,7 +48,7 @@ const MAX_FINMIND_CANDIDATES = 20;
 // 前端 Dashboard 之後會透過 latest.mjs 讀取這裡存的最新結果。
 export const config = { schedule: '10 6 * * 1-5' };
 
-async function fetchTodayTwseQuotes() {
+const fetchTodayTwseQuotes = async () => {
   const res = await fetch(TWSE_URL, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`TWSE API 回應錯誤: HTTP ${res.status}`);
   const rows = await res.json();
@@ -58,7 +58,7 @@ async function fetchTodayTwseQuotes() {
   return rows.map(normalizeTwseRow).filter(isTradableRow).filter((q) => !isWarrant(q));
 }
 
-async function fetchTodayTpexQuotes() {
+const fetchTodayTpexQuotes = async () => {
   // 見 README「已知限制」：TPEx 欄位尚未實際驗證，欄位對不上時會拋出錯誤，
   // 這裡選擇讓錯誤往上傳遞（而不是吞掉），因為上櫃資料如果抓錯，整份候選名單的
   // 「全市場」前提就不成立了，寧可讓使用者知道，也不要默默只用上市資料出結果。

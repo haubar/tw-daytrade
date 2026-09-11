@@ -64,7 +64,7 @@ const TPEX_FIELD_CANDIDATES = {
   change: ['Change', 'Diff', '漲跌', '漲跌價差'],
 };
 
-function pickField(row, candidates) {
+const pickField = (row, candidates) => {
   for (const key of candidates) {
     if (row[key] !== undefined) return row[key];
   }

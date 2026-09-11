@@ -10,7 +10,7 @@ import { getStore } from '@netlify/blobs';
 const STORE_NAME = 'scan-results';
 const LATEST_KEY = 'latest';
 
-function defaultStore() {
+const defaultStore = () => {
   return getStore(STORE_NAME);
 }
 

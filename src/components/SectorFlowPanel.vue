@@ -22,7 +22,7 @@ const filteredSectors = computed(() => {
     : sectors.filter((sector) => sector.state === selectedState.value);
 });
 
-function formatAmount(value) {
+const formatAmount = (value) => {
   if (!Number.isFinite(value)) return '—';
   const abs = Math.abs(value);
   const sign = value > 0 ? '+' : value < 0 ? '-' : '';
@@ -31,7 +31,7 @@ function formatAmount(value) {
   return `${sign}${Math.round(abs).toLocaleString('zh-TW')}`;
 }
 
-function stateClass(state) {
+const stateClass = (state) => {
   return {
     surge: 'border-surge/40 bg-surge/10 text-surge',
     rotation: 'border-gold/40 bg-gold/10 text-gold',
@@ -40,7 +40,7 @@ function stateClass(state) {
   }[state] || 'border-hairline bg-ink text-mute';
 }
 
-async function loadFlow() {
+const loadFlow = async () => {
   isLoading.value = true;
   errorMessage.value = '';
   try {

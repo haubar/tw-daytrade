@@ -29,7 +29,7 @@ const NET_BUY_FIELD_NAME = '三大法人買賣超股數';
 /**
  * 把千分位逗號數字字串轉成數字（例如 "14,785,200" → 14785200）
  */
-function parseThousands(text) {
+const parseThousands = (text) => {
   const cleaned = String(text).replace(/,/g, '').trim();
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : 0;

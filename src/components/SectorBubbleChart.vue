@@ -13,7 +13,7 @@ let timer = null;
 
 const currentFrame = computed(() => frames.value[frameIndex.value] ?? null);
 
-function numericRange(values) {
+const numericRange = (values) => {
   const finite = values.filter(Number.isFinite);
   if (!finite.length) return { min: -1, max: 1 };
   const min = Math.min(...finite);
@@ -41,7 +41,7 @@ const bubbles = computed(() => {
 const stateLabels = { surge: '漲潮', rotation: '輪動', watch: '觀望', ebb: '退潮' };
 const stateColors = { surge: '#e14848', rotation: '#d7a233', watch: '#6c7bd9', ebb: '#1fa37a' };
 
-function formatAmount(value) {
+const formatAmount = (value) => {
   if (!Number.isFinite(value)) return '—';
   const abs = Math.abs(value);
   const sign = value > 0 ? '+' : value < 0 ? '-' : '';
@@ -50,16 +50,16 @@ function formatAmount(value) {
   return `${sign}${Math.round(abs).toLocaleString('zh-TW')}`;
 }
 
-function selectBubble(bubble) {
+const selectBubble = (bubble) => {
   selectedSector.value = bubble;
 }
 
-function step(direction) {
+const step = (direction) => {
   if (!frames.value.length) return;
   frameIndex.value = Math.min(Math.max(frameIndex.value + direction, 0), frames.value.length - 1);
 }
 
-function togglePlay() {
+const togglePlay = () => {
   isPlaying.value = !isPlaying.value;
   if (isPlaying.value) {
     timer = window.setInterval(() => {
@@ -77,7 +77,7 @@ function togglePlay() {
   }
 }
 
-async function loadReplay() {
+const loadReplay = async () => {
   isLoading.value = true;
   errorMessage.value = '';
   try {

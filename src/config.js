@@ -12,6 +12,4 @@ export const STOCK_VIEW_BASE_URL = 'https://stock-vvv.netlify.app';
  * @param {string} code 股票代碼
  * @returns {string}
  */
-export function buildStockViewUrl(code) {
-  return `${STOCK_VIEW_BASE_URL}/?code=${encodeURIComponent(code)}`;
-}
+export const buildStockViewUrl = (code) => `${STOCK_VIEW_BASE_URL}/?code=${encodeURIComponent(code)}`;

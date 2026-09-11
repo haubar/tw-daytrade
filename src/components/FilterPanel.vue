@@ -10,49 +10,49 @@ const PRICE_SLIDER_MAX = 999;
 const VOLUME_OPTIONS = [null, 100, 500, 1000, 5000, 10000]; // 單位：張
 const GAIN_OPTIONS = [null, 1, 3, 5, 7, 10];
 
-function displayPrice(value, fallback) {
+const displayPrice = (value, fallback) => {
   return value == null ? fallback : `${value} 元`;
 }
 
-function setMinPrice(event) {
+const setMinPrice = (event) => {
   const value = Number(event.target.value);
   const max = filters.value.maxPrice ?? PRICE_SLIDER_MAX;
   filters.value.minPrice = value === 0 ? null : Math.min(value, max);
   if (filters.value.maxPrice != null && filters.value.maxPrice < value) filters.value.maxPrice = value;
 }
 
-function setMaxPrice(event) {
+const setMaxPrice = (event) => {
   const value = Number(event.target.value);
   const min = filters.value.minPrice ?? 0;
   filters.value.maxPrice = value === PRICE_SLIDER_MAX ? null : Math.max(value, min);
   if (filters.value.minPrice != null && filters.value.minPrice > value) filters.value.minPrice = value;
 }
 
-function setMinVolume(event) {
+const setMinVolume = (event) => {
   const lots = VOLUME_OPTIONS[Number(event.target.value)];
   filters.value.minVolume = lots == null ? null : lots * 1000;
 }
 
-function setMinGainPercent(event) {
+const setMinGainPercent = (event) => {
   filters.value.minGainPercent = GAIN_OPTIONS[Number(event.target.value)];
 }
 
-function volumeOptionIndex() {
+const volumeOptionIndex = () => {
   const index = VOLUME_OPTIONS.indexOf(filters.value.minVolume == null ? null : filters.value.minVolume / 1000);
   return index === -1 ? 0 : index;
 }
 
-function gainOptionIndex() {
+const gainOptionIndex = () => {
   const index = GAIN_OPTIONS.indexOf(filters.value.minGainPercent);
   return index === -1 ? 0 : index;
 }
 
-function applyPriceBand(band, index) {
+const applyPriceBand = (band, index) => {
   filters.value.minPrice = band.min;
   filters.value.maxPrice = getPriceBandUpperBound(index);
 }
 
-function priceRangeStyle() {
+const priceRangeStyle = () => {
   const min = filters.value.minPrice ?? 0;
   const max = filters.value.maxPrice ?? PRICE_SLIDER_MAX;
   return {
@@ -61,7 +61,7 @@ function priceRangeStyle() {
   };
 }
 
-function resetFilters() {
+const resetFilters = () => {
   // 不直接替換 defineModel 指向的物件，避免父層傳入 reactive 物件時失去連結，
   // 這也是原本「清除篩選」看似沒有作用的原因。
   Object.assign(filters.value, { minPrice: null, maxPrice: null, minVolume: null, minGainPercent: null, hideDayTradeIneligible: false });

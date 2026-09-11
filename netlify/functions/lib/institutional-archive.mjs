@@ -10,19 +10,19 @@ export const INSTITUTIONAL_INDEX_KEY = 'index';
 export const INSTITUTIONAL_SCHEMA_VERSION = 1;
 export const MAX_INSTITUTIONAL_DAYS = 260;
 
-function defaultStore() {
+const defaultStore = () => {
   return getStore(INSTITUTIONAL_STORE_NAME);
 }
 
-function snapshotKey(date) {
+const snapshotKey = (date) => {
   return `snapshot:${date}`;
 }
 
-function isIsoDate(value) {
+const isIsoDate = (value) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? ''));
 }
 
-function normalizeRecords(records) {
+const normalizeRecords = (records) => {
   const source = records instanceof Map
     ? [...records.entries()].map(([code, netBuyShares]) => ({ code, netBuyShares }))
     : Array.isArray(records) ? records : [];

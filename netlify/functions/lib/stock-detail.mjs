@@ -7,11 +7,11 @@ const STRATEGIES = [
   { key: 'shortBase', label: '空方基準' },
 ];
 
-function normalizeCode(value) {
+const normalizeCode = (value) => {
   return String(value ?? '').trim().toUpperCase();
 }
 
-function findLatestQuote(latestScan, code) {
+const findLatestQuote = (latestScan, code) => {
   const lists = [latestScan?.longWatchlist, latestScan?.shortWatchlist];
   for (const list of lists) {
     const item = list?.find((candidate) => normalizeCode(candidate?.code) === code);
@@ -20,7 +20,7 @@ function findLatestQuote(latestScan, code) {
   return null;
 }
 
-function summarizeBucket(bucket) {
+const summarizeBucket = (bucket) => {
   const trades = bucket?.trades ?? 0;
   const wins = bucket?.wins ?? 0;
   return {

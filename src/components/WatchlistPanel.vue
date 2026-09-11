@@ -22,7 +22,7 @@ defineProps({
   institutionalDataCoverageVersion: { type: Number, default: 0 },
 });
 
-function profitReference(price) {
+const profitReference = (price) => {
   const band = getPriceBand(price);
   if (!band || band.profitTicks == null) return null;
   const move = getPriceMoveForTicks(price, band.profitTicks);

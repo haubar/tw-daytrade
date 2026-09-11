@@ -10,7 +10,7 @@
  * @returns {{progress: number, completed: boolean}}
  *   completed 為 true 時，progress 一定會是 0（完成後重新歸零，準備接受下一輪）
  */
-export function advanceSequence(key, progress, sequence) {
+export const advanceSequence = (key, progress, sequence) => {
   if (key === sequence[progress]) {
     const nextProgress = progress + 1;
     if (nextProgress === sequence.length) {
@@ -24,4 +24,4 @@ export function advanceSequence(key, progress, sequence) {
     return { progress: 1, completed: false };
   }
   return { progress: 0, completed: false };
-}
+};

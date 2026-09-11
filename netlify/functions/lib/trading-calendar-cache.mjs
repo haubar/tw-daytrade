@@ -13,11 +13,11 @@ import { getStore } from '@netlify/blobs';
 
 const STORE_NAME = 'trading-calendar';
 
-function defaultStore() {
+const defaultStore = () => {
   return getStore(STORE_NAME);
 }
 
-function yearKey(year) {
+const yearKey = (year) => {
   return `holidays:${year}`;
 }
 

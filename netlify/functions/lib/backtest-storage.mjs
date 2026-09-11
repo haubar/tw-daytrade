@@ -5,7 +5,7 @@ const INDEX_KEY = 'index';
 const LATEST_KEY = 'latest';
 const MAX_RESULTS = 260; // 約一個交易年度
 
-function defaultStore() {
+const defaultStore = () => {
   return getStore(STORE_NAME);
 }
 

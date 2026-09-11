@@ -2,13 +2,7 @@ import { getRecentInstitutionalHistory } from './lib/institutional-archive.mjs';
 import { buildSectorFlow } from './lib/sector-flow.mjs';
 import { DEFAULT_SECTORS, filterSectorsByCodes } from './lib/sector-classification.mjs';
 import { getSharedWatchlist } from './lib/watchlist.mjs';
-
-function json(value, status = 200) {
-  return new Response(JSON.stringify(value, null, 2), {
-    status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
-  });
-}
+import { errorResponse, jsonResponse } from './lib/http.mjs';
 
 export default async (req) => {
   try {
@@ -22,8 +16,8 @@ export default async (req) => {
     const sectors = watchlistOnly
       ? filterSectorsByCodes(DEFAULT_SECTORS, watchlist.items.map((item) => item.code))
       : DEFAULT_SECTORS;
-    return json({ ...buildSectorFlow(snapshots, { sectors }), daysRequested: days, daysScanned: snapshots.length, watchlistOnly });
+    return jsonResponse({ ...buildSectorFlow(snapshots, { sectors }), daysRequested: days, daysScanned: snapshots.length, watchlistOnly });
   } catch (error) {
-    return json({ error: error.message || '板塊資金資料讀取失敗' }, 500);
+    return errorResponse(error);
   }
 };

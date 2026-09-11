@@ -28,7 +28,7 @@ import {
  * @param {Set<string>|null} [institutionalDataExpectedCodes] 本次確實有查詢法人資料的股票代碼集合。
  *   未傳入時維持舊版行為：Map 沒有該代碼就標記為缺資料；傳入後只有「查詢過但沒有結果」才標記。
  */
-function buildCandidate(quote, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory = new Map(), marketChangeHistory = [], dayTradeEligibleCodes = null, institutionalDataExpectedCodes = null) {
+const buildCandidate = (quote, volumeHistory, institutionalNetBuy, marketChangePercent, changeHistory = new Map(), marketChangeHistory = [], dayTradeEligibleCodes = null, institutionalDataExpectedCodes = null) => {
   const prevClose = quote.close - quote.change;
   const changePercent = computeChangePercent(quote.change, prevClose);
   const pastVolumes = volumeHistory.get(quote.code) || [];

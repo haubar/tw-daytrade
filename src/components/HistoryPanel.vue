@@ -10,6 +10,7 @@
 import { ref, onUnmounted, watch } from 'vue';
 import { formatPercent } from '../utils/format.js';
 import { advanceSequence } from '../utils/keySequence.js';
+import { fetchHistoryIndex, fetchStockWinRate } from '../services/api.js';
 
 const isOpen = ref(false);
 const isLoading = ref(false);
@@ -25,13 +26,11 @@ const stockRankError = ref(null);
 const stockRankResult = ref(null);
 const stockRankStrategy = ref('base'); // 'base' 或 'adv'
 
-async function loadStockWinRates() {
+const loadStockWinRates = async () => {
   stockRankLoading.value = true;
   stockRankError.value = null;
   try {
-    const res = await fetch(`/.netlify/functions/stock-win-rate?strategy=${stockRankStrategy.value}&minTrades=3&limit=20`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    stockRankResult.value = await res.json();
+    stockRankResult.value = await fetchStockWinRate(stockRankStrategy.value);
   } catch (e) {
     stockRankError.value = e.message;
   } finally {
@@ -44,14 +43,12 @@ async function loadStockWinRates() {
 const REQUIRED_SEQUENCE = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 const sequenceProgress = ref(0); // 用 ref 而不是模組層級變數，避免元件被多次掛載時互相污染進度
 
-async function loadHistoryIndex() {
+const loadHistoryIndex = async () => {
   if (hasLoadedOnce.value) return; // 開過一次之後不重複打 API，除非使用者手動重新整理頁面
   isLoading.value = true;
   loadError.value = null;
   try {
-    const res = await fetch('/.netlify/functions/history-index');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await fetchHistoryIndex();
     items.value = data.items ?? [];
     rollingStats.value = data.rollingStats ?? null;
     hasLoadedOnce.value = true;
@@ -62,7 +59,7 @@ async function loadHistoryIndex() {
   }
 }
 
-function handleKeydown(e) {
+const handleKeydown = (e) => {
   // 只有方向鍵才處理，其他按鍵完全忽略，不會打斷已經按對的序列進度
   // （例如中途不小心按到 Tab，不應該讓「已經按對上、下」的進度歸零）。
   const isArrowKey = REQUIRED_SEQUENCE.includes(e.key);
@@ -83,7 +80,7 @@ function handleKeydown(e) {
   }
 }
 
-function close() {
+const close = () => {
   isOpen.value = false;
   sequenceProgress.value = 0;
 }
@@ -91,7 +88,7 @@ function close() {
 // Esc 關閉面板。這是「面板開啟後」才需要的行為，跟「用方向鍵叫出面板」是分開的兩件事
 // （見上面的 handleKeydown，那個是全域監聽、任何時候都在聽；這個只在面板開啟時才需要處理），
 // 所以用 watch 動態掛載/卸載監聽器，面板關閉時就不佔用事件監聽器。
-function handleEscape(e) {
+const handleEscape = (e) => {
   if (e.key === 'Escape') close();
 }
 watch(isOpen, (open) => {

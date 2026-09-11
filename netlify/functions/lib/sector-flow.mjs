@@ -1,15 +1,15 @@
 import { buildCodeToSectors, DEFAULT_SECTORS, SECTOR_CLASSIFICATION_VERSION } from './sector-classification.mjs';
 
-function sum(values) {
+const sum = (values) => {
   return values.reduce((total, value) => total + value, 0);
 }
 
-function recordAmount(record) {
+const recordAmount = (record) => {
   if (!Number.isFinite(record?.netBuyShares) || !Number.isFinite(record?.close)) return null;
   return record.netBuyShares * record.close;
 }
 
-function classifyState(recentFiveAmount, recentTwentyAmount, availableFiveDays, availableTwentyDays) {
+const classifyState = (recentFiveAmount, recentTwentyAmount, availableFiveDays, availableTwentyDays) => {
   const fiveDaily = availableFiveDays > 0 ? recentFiveAmount / availableFiveDays : 0;
   const twentyDaily = availableTwentyDays > 0 ? recentTwentyAmount / availableTwentyDays : 0;
   const accelerating = fiveDaily >= twentyDaily;

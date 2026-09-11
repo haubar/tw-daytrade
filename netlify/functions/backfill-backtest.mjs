@@ -23,12 +23,12 @@ import { getExchangeHolidaysForYears } from './lib/trading-calendar-cache.mjs';
 const MAX_SIGNAL_DAYS_PER_RUN = 1;
 const TOP_N = 10;
 
-function dateFromIso(isoDate) {
+const dateFromIso = (isoDate) => {
   const [year, month, day] = isoDate.split('-').map(Number);
   return new Date(year, month - 1, day);
 }
 
-function buildVolumeHistory(historyDays) {
+const buildVolumeHistory = (historyDays) => {
   const volumeHistory = new Map();
   for (const day of historyDays) {
     for (const quote of day.quotes) {

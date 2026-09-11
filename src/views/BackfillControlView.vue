@@ -12,6 +12,7 @@
 // 4. 全部都補齊時要有正面回饋（不是只留一個空表格讓使用者自己猜「是不是都做完了」）
 
 import { ref, onMounted, computed } from 'vue';
+import { fetchBackfillStatus, runBackfillBacktest } from '../services/api.js';
 
 const emit = defineEmits(['close']);
 
@@ -27,13 +28,11 @@ const rowError = ref({}); // { [date]: string }
 
 const pendingCount = computed(() => items.value.filter((i) => !i.hasBacktest && rowState.value[i.date] !== 'success').length);
 
-async function loadStatus() {
+const loadStatus = async () => {
   isLoading.value = true;
   loadError.value = null;
   try {
-    const res = await fetch('/.netlify/functions/backfill-status?days=10');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await fetchBackfillStatus(10);
     items.value = data.items ?? [];
   } catch (e) {
     loadError.value = e.message;
@@ -42,14 +41,12 @@ async function loadStatus() {
   }
 }
 
-async function backfillDay(date) {
+const backfillDay = async (date) => {
   rowState.value = { ...rowState.value, [date]: 'loading' };
   rowError.value = { ...rowError.value, [date]: '' };
 
   try {
-    const res = await fetch(`/.netlify/functions/backfill-backtest?signalDate=${date}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const data = await runBackfillBacktest(date);
 
     if (data.targetSignalDateSucceeded) {
       rowState.value = { ...rowState.value, [date]: 'success' };

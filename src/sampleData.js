@@ -12,6 +12,7 @@ export const sampleScanResult = {
     twse: 'ok (1023 檔)',
     tpex: 'ok (812 檔)',
     institutional: 'ok (987 檔)',
+    institutionalArchive: 'ok（今日法人資料已歸檔）',
     historyArchive: 'ok（累積 5/5 天，天數足夠）',
     relativeStrengthWindow: 'ok（累積 5/5 天，多日相對強弱因子已啟用）',
     taiex: 'ok（使用真實 TAIEX 指數）',

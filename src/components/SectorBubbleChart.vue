@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { fetchSectorReplay } from '../services/api.js';
 
 const frames = ref([]);
 const frameIndex = ref(0);
@@ -80,9 +81,7 @@ async function loadReplay() {
   isLoading.value = true;
   errorMessage.value = '';
   try {
-    const response = await fetch(`/.netlify/functions/sector-replay?days=20${watchlistOnly.value ? '&watchlistOnly=1' : ''}`);
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || `伺服器回應錯誤: HTTP ${response.status}`);
+    const body = await fetchSectorReplay({ days: 20, watchlistOnly: watchlistOnly.value });
     frames.value = body.frames ?? [];
     frameIndex.value = Math.max(0, frames.value.length - 1);
   } catch (error) {

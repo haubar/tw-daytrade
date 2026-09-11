@@ -2,6 +2,12 @@
 import { computed, onMounted, ref } from 'vue';
 import Badge from './base/Badge.vue';
 import { formatPercent, formatPrice, formatVolume } from '../utils/format.js';
+import {
+  addSharedWatchlistItem,
+  fetchSharedWatchlist,
+  fetchStockDetail,
+  removeSharedWatchlistItem,
+} from '../services/api.js';
 
 const items = ref([]);
 const audit = ref([]);
@@ -22,13 +28,6 @@ const filteredItems = computed(() => {
   return items.value.filter((item) => `${item.code} ${item.name}`.toLowerCase().includes(keyword));
 });
 
-async function requestWatchlist(options = {}) {
-  const response = await fetch('/.netlify/functions/shared-watchlist', options);
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `伺服器回應錯誤: HTTP ${response.status}`);
-  return body;
-}
-
 function applyWatchlist(body) {
   items.value = Array.isArray(body.items) ? body.items : [];
   audit.value = Array.isArray(body.audit) ? body.audit : [];
@@ -38,7 +37,7 @@ async function loadWatchlist() {
   isLoading.value = true;
   errorMessage.value = '';
   try {
-    applyWatchlist(await requestWatchlist());
+    applyWatchlist(await fetchSharedWatchlist());
   } catch (error) {
     errorMessage.value = error.message;
   } finally {
@@ -56,11 +55,7 @@ async function addItem() {
   isSaving.value = true;
   errorMessage.value = '';
   try {
-    applyWatchlist(await requestWatchlist({
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code, name: nameInput.value.trim(), market: marketInput.value }),
-    }));
+    applyWatchlist(await addSharedWatchlistItem({ code, name: nameInput.value.trim(), market: marketInput.value }));
     codeInput.value = '';
     nameInput.value = '';
   } catch (error) {
@@ -76,11 +71,7 @@ async function removeItem(item) {
   isSaving.value = true;
   errorMessage.value = '';
   try {
-    applyWatchlist(await requestWatchlist({
-      method: 'DELETE',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code: item.code }),
-    }));
+    applyWatchlist(await removeSharedWatchlistItem(item.code));
   } catch (error) {
     errorMessage.value = error.message;
   } finally {
@@ -104,13 +95,10 @@ async function openDetail(item) {
   detailLoading.value = true;
   detailError.value = '';
   try {
-    const body = await requestWatchlist({});
+    const body = await fetchSharedWatchlist();
     // 重新讀取共用清單，避免在其他使用者剛修改後使用過期項目。
     applyWatchlist(body);
-    const response = await fetch(`/.netlify/functions/stock-detail?code=${encodeURIComponent(item.code)}&days=60`);
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || `伺服器回應錯誤: HTTP ${response.status}`);
-    detail.value = result;
+    detail.value = await fetchStockDetail(item.code, 60);
   } catch (error) {
     detailError.value = error.message;
   } finally {

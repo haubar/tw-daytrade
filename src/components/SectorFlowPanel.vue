@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { fetchSectorFlow } from '../services/api.js';
 
 const flow = ref(null);
 const isLoading = ref(true);
@@ -43,10 +44,7 @@ async function loadFlow() {
   isLoading.value = true;
   errorMessage.value = '';
   try {
-    const response = await fetch(`/.netlify/functions/sector-flow?days=20${watchlistOnly.value ? '&watchlistOnly=1' : ''}`);
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || `伺服器回應錯誤: HTTP ${response.status}`);
-    flow.value = body;
+    flow.value = await fetchSectorFlow({ days: 20, watchlistOnly: watchlistOnly.value });
   } catch (error) {
     errorMessage.value = error.message;
   } finally {

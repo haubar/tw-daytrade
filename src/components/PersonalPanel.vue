@@ -140,21 +140,22 @@ onMounted(loadWatchlist);
 </script>
 
 <template>
-  <section class="mb-4 overflow-hidden rounded-md border border-hairline bg-panel">
-    <header class="flex flex-wrap items-baseline justify-between gap-2 border-b border-hairline px-4 pb-3 pt-4">
+  <section class="mb-4 overflow-hidden rounded-xl border border-hairline bg-panel shadow-[0_14px_36px_rgba(0,0,0,0.12)]">
+    <header class="flex flex-wrap items-baseline justify-between gap-2 border-b border-hairline px-4 pb-4 pt-5 sm:px-5">
       <div>
         <h2 class="m-0 font-display text-[1.15rem] font-bold text-gold">我的自選（共用）</h2>
-        <p class="m-0 mt-1 text-[0.72rem] text-mute">所有使用者共用，加入或移除會影響整份清單。</p>
+        <p class="m-0 mt-1 max-w-2xl text-[0.72rem] leading-relaxed text-mute">先確認股票，再加入清單；加入後可查看勝率、歷史交易樣本與目前行情，最後由你自行判斷。</p>
       </div>
-      <span class="font-mono text-[0.85rem] text-mute">{{ items.length }} 檔</span>
+      <span class="rounded-full border border-gold/30 bg-gold/10 px-2.5 py-1 font-mono text-[0.75rem] text-gold">{{ items.length }} 檔</span>
     </header>
 
-    <div class="border-b border-hairline p-4">
-      <label class="flex flex-col gap-1 text-[0.72rem] text-mute">
-        搜尋股票名稱或股號
+    <div class="border-b border-hairline bg-ink/20 p-4 sm:p-5">
+      <label class="flex flex-col gap-1.5 text-[0.72rem] text-mute">
+        <span class="font-bold text-paper">新增自選股</span>
+        <span>搜尋名稱或股號，選取正確資料後再加入。</span>
         <div class="flex gap-2">
-          <input v-model="searchInput" class="min-w-0 flex-1 rounded border border-hairline bg-ink px-2 py-2 text-paper" placeholder="例如 2330、台積電" autocomplete="off" @keyup.enter="searchStockOptions">
-          <button type="button" class="rounded border border-gold px-3 py-2 text-sm text-gold hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-50" :disabled="searchLoading" @click="searchStockOptions">
+          <input v-model="searchInput" aria-label="搜尋股票名稱或股號" class="min-w-0 flex-1 rounded-lg border border-hairline bg-ink px-3 py-2.5 text-paper placeholder:text-mute/70" placeholder="例如 2330、台積電" autocomplete="off" @keyup.enter="searchStockOptions">
+          <button type="button" class="rounded-lg border border-gold px-3 py-2 text-sm font-medium text-gold transition hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-50" :disabled="searchLoading" @click="searchStockOptions">
             {{ searchLoading ? '搜尋中…' : '搜尋' }}
           </button>
         </div>
@@ -163,33 +164,37 @@ onMounted(loadWatchlist);
       <p v-if="searchLoading" class="m-0 mt-2 text-xs text-mute">正在查詢 TWSE／TPEx 最新行情…</p>
       <p v-if="searchError" class="m-0 mt-2 text-xs text-ebb">{{ searchError }}</p>
 
-      <ul v-if="searchResults.length" class="m-0 mt-2 list-none overflow-hidden rounded border border-hairline bg-ink p-0">
+      <ul v-if="searchResults.length" class="m-0 mt-3 list-none overflow-hidden rounded-lg border border-hairline bg-ink p-0" aria-label="股票搜尋結果">
         <li v-for="stock in searchResults" :key="`${stock.market}-${stock.code}`">
-          <button type="button" class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-panel-raised" @click="selectStock(stock)">
+          <button type="button" class="flex w-full items-center justify-between gap-3 border-b border-hairline px-3 py-2.5 text-left text-sm transition last:border-b-0 hover:bg-panel-raised" @click="selectStock(stock)">
             <span><span class="font-mono text-mute">{{ stock.code }}</span> <span class="text-paper">{{ stock.name }}</span></span>
             <span class="text-xs text-mute">{{ stock.market === 'TPEx' ? '上櫃' : '上市' }}</span>
           </button>
         </li>
       </ul>
 
-      <div v-if="selectedStock" class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-gold/30 bg-gold/10 px-3 py-2 text-sm">
+      <div v-if="selectedStock" class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gold/30 bg-gold/10 px-3 py-2.5 text-sm">
         <span>已選擇：<strong>{{ selectedStock.name }}</strong> <span class="font-mono text-mute">{{ selectedStock.code }}</span></span>
-        <button type="button" class="rounded bg-gold px-3 py-2 text-sm font-bold text-ink disabled:cursor-not-allowed disabled:opacity-50" :disabled="isSaving" @click="addItem">
+        <button type="button" class="rounded-lg bg-gold px-3 py-2 text-sm font-bold text-ink transition hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-50" :disabled="isSaving" @click="addItem">
         {{ isSaving ? '處理中…' : '加入自選' }}
         </button>
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center justify-end gap-2 px-4 pb-3 pt-3">
+    <div class="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4 sm:px-5">
+      <span class="text-[0.7rem] text-mute">共用清單中的股票會顯示在下方</span>
       <button type="button" class="text-sm text-mute underline hover:text-paper" :disabled="isLoading || isSaving" @click="loadWatchlist">重新整理</button>
     </div>
 
     <p v-if="errorMessage" class="mx-4 mb-3 rounded border border-ebb/40 bg-ebb/10 px-3 py-2 text-sm text-paper">{{ errorMessage }}</p>
     <p v-if="isLoading" class="px-4 py-6 text-center text-mute">正在讀取共用自選股…</p>
-    <p v-else-if="items.length === 0" class="px-4 py-6 text-center text-mute">目前沒有共用自選股。</p>
+    <div v-else-if="items.length === 0" class="mx-4 mb-4 rounded-lg border border-dashed border-hairline px-4 py-8 text-center sm:mx-5">
+      <p class="m-0 text-sm text-paper">目前還沒有自選股</p>
+      <p class="m-0 mt-1 text-xs text-mute">搜尋一檔股票，確認名稱與股號後即可加入。</p>
+    </div>
 
-    <ul v-else class="m-0 list-none divide-y divide-hairline p-0">
-      <li v-for="item in items" :key="item.code" class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-panel-raised">
+    <ul v-else class="m-0 grid list-none gap-2 px-4 pb-4 sm:grid-cols-2 sm:px-5">
+      <li v-for="item in items" :key="item.code" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-hairline bg-ink/30 px-3 py-3 transition hover:border-gold/40 hover:bg-panel-raised">
         <div class="flex min-w-0 items-center gap-2">
           <span class="font-mono text-sm text-mute">{{ item.code }}</span>
           <span class="truncate font-medium">{{ item.name }}</span>
@@ -203,7 +208,7 @@ onMounted(loadWatchlist);
       </li>
     </ul>
 
-    <section v-if="detail || detailLoading || detailError" class="border-t border-hairline bg-panel-raised p-4">
+    <section v-if="detail || detailLoading || detailError" class="border-t border-hairline bg-panel-raised p-4 sm:p-5">
       <p v-if="detailLoading" class="m-0 text-sm text-mute">正在讀取 {{ detail?.code || '個股' }} 詳細資料…</p>
       <p v-if="detailError" class="m-0 rounded border border-ebb/40 bg-ebb/10 px-3 py-2 text-sm text-paper">{{ detailError }}</p>
       <template v-if="detail && !detailLoading">

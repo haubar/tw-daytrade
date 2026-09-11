@@ -81,7 +81,7 @@ export async function getStockPointHistory(rawCode) {
     const localStore = getStore(LOCAL_TRIGGER_STORE_NAME);
     const today = new Date().toISOString().slice(0, 10);
     const localCached = await localStore.get(`${today}_${code}`, { type: 'json', consistency: 'strong' });
-    if (localCached) return { enabled: true, triggered: false, records: [localCached] };
+    if (localCached && localCached.score != null) return { enabled: true, triggered: false, records: [localCached] };
 
     const store = getStore(STORE_NAME, { siteID, token });
     const { blobs = [] } = await store.list();

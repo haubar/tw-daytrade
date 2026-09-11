@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import Badge from './base/Badge.vue';
 import { formatPercent, formatPrice, formatVolume } from '../utils/format.js';
 import {
@@ -20,16 +20,9 @@ const searchResults = ref([]);
 const selectedStock = ref(null);
 const searchLoading = ref(false);
 const searchError = ref('');
-const filterInput = ref('');
 const detail = ref(null);
 const detailLoading = ref(false);
 const detailError = ref('');
-
-const filteredItems = computed(() => {
-  const keyword = filterInput.value.trim().toLowerCase();
-  if (!keyword) return items.value;
-  return items.value.filter((item) => `${item.code} ${item.name}`.toLowerCase().includes(keyword));
-});
 
 const applyWatchlist = (body) => {
   items.value = Array.isArray(body.items) ? body.items : [];
@@ -178,17 +171,16 @@ onMounted(loadWatchlist);
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-3">
-      <input v-model="filterInput" class="rounded border border-hairline bg-ink px-2 py-1.5 text-sm text-paper" placeholder="搜尋共用自選股">
+    <div class="flex flex-wrap items-center justify-end gap-2 px-4 pb-3 pt-3">
       <button type="button" class="text-sm text-mute underline hover:text-paper" :disabled="isLoading || isSaving" @click="loadWatchlist">重新整理</button>
     </div>
 
     <p v-if="errorMessage" class="mx-4 mb-3 rounded border border-ebb/40 bg-ebb/10 px-3 py-2 text-sm text-paper">{{ errorMessage }}</p>
     <p v-if="isLoading" class="px-4 py-6 text-center text-mute">正在讀取共用自選股…</p>
-    <p v-else-if="filteredItems.length === 0" class="px-4 py-6 text-center text-mute">目前沒有符合的共用自選股。</p>
+    <p v-else-if="items.length === 0" class="px-4 py-6 text-center text-mute">目前沒有共用自選股。</p>
 
     <ul v-else class="m-0 list-none divide-y divide-hairline p-0">
-      <li v-for="item in filteredItems" :key="item.code" class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-panel-raised">
+      <li v-for="item in items" :key="item.code" class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-panel-raised">
         <div class="flex min-w-0 items-center gap-2">
           <span class="font-mono text-sm text-mute">{{ item.code }}</span>
           <span class="truncate font-medium">{{ item.name }}</span>
